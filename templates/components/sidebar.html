@@ -11,11 +11,21 @@
     <button class="btn btn-sm btn-outline-secondary d-lg-none" id="sidebarClose"><i class="bi bi-x-lg"></i></button>
   </div>
   <ul class="nav flex-column px-3 pt-3 gap-1">
-    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:dashboard' %}">Dashboard</a></li>
-    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:inventory' %}">Inventory</a></li>
+    <li class="nav-item">
+      <a class="nav-link d-flex align-items-center justify-content-between" href="#dashboardSubmenu" data-bs-toggle="collapse" data-bs-target="#dashboardSubmenu" aria-expanded="false" aria-controls="dashboardSubmenu">
+        <span>Dashboard</span>
+        <i class="bi bi-chevron-down small"></i>
+      </a>
+      <div class="collapse ps-3" id="dashboardSubmenu">
+        <ul class="nav flex-column gap-1 mt-1">
+          <li class="nav-item"><a class="nav-link py-2" href="{% url 'parts_frontend:dashboard' %}">Overview</a></li>
+          <li class="nav-item"><a class="nav-link py-2" href="{% url 'parts_frontend:inventory' %}">Inventory</a></li>
+          <li class="nav-item"><a class="nav-link py-2" href="{% url 'parts_frontend:forecast' %}">Demand Forecast</a></li>
+        </ul>
+      </div>
+    </li>
     <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:part_detail' pk=1 %}">Parts</a></li>
     <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:orders' %}">Dealer Orders</a></li>
-    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:forecast' %}">Demand Forecast</a></li>
     <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:risks' %}">Stockout Risk</a></li>
     <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:recommendations' %}">Recommendations</a></li>
     <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:warehouses' %}">Warehouses</a></li>

@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   function setSidebarOpen(open) {
+    if (!sidebar) {
+      return;
+    }
+
     if (open) {
       document.body.classList.add('sidebar-open');
       sidebar.classList.remove('d-none');
@@ -53,10 +57,4 @@ document.addEventListener('DOMContentLoaded', function(){
       uiLog('Sidebar backdrop clicked', {});
     });
   }
-
-  document.querySelectorAll('button, a, input, select').forEach(function(element){
-    element.addEventListener('click', function(){
-      uiLog('UI interaction', { tag: element.tagName, label: element.innerText?.trim().slice(0, 60) || element.placeholder || '' });
-    });
-  });
 });
