@@ -1,0 +1,25 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: catparts_db
+      POSTGRES_USER: catparts
+      POSTGRES_PASSWORD: catparts
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  redis:
+    image: redis:7
+  web:
+    build: .
+    command: gunicorn catparts.wsgi:application --bind 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgres://catparts:catparts@db:5432/catparts_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+volumes:
+  postgres_data:

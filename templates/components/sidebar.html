@@ -1,0 +1,40 @@
+{% load static %}
+<nav id="sidebar" class="bg-white border-end d-flex flex-column">
+  <div class="sidebar-header p-4 d-flex align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <img src="{% static 'images/catparts-logo.svg' %}" alt="CatParts India" class="brand-logo" />
+      <div>
+        <h5 class="mb-1">CatParts India</h5>
+        <small class="text-muted">India Operations</small>
+      </div>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary d-lg-none" id="sidebarClose"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <ul class="nav flex-column px-3 pt-3 gap-1">
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:dashboard' %}">Dashboard</a></li>
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:inventory' %}">Inventory</a></li>
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:part_detail' pk=1 %}">Parts</a></li>
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:orders' %}">Dealer Orders</a></li>
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:forecast' %}">Demand Forecast</a></li>
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:risks' %}">Stockout Risk</a></li>
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:recommendations' %}">Recommendations</a></li>
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:warehouses' %}">Warehouses</a></li>
+    <li class="nav-item"><a class="nav-link" href="{% url 'parts_frontend:reports' %}">Reports</a></li>
+  </ul>
+
+  <div class="mt-auto p-4 border-top">
+    <div class="d-flex align-items-center mb-3">
+      <div class="me-3">
+        <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center">WM</div>
+      </div>
+      <div>
+        <div class="fw-bold">Warehouse Manager</div>
+        <small class="text-muted">Role: Warehouse Manager</small>
+      </div>
+    </div>
+    <div class="d-flex flex-column gap-1">
+      <a href="#" class="small">Settings</a>
+      <a href="{% url 'parts_frontend:login' %}" class="small text-danger">Logout</a>
+    </div>
+  </div>
+</nav>

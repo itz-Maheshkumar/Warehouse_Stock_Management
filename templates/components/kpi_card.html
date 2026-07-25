@@ -1,0 +1,14 @@
+<div class="card shadow-sm p-3 mb-3">
+  <div class="d-flex justify-content-between align-items-center">
+    <div>
+      <div class="text-muted small d-flex align-items-center gap-2">
+        {% if icon %}<i class="bi {{ icon }}"></i>{% endif %}
+        <span>{{ title }}</span>
+      </div>
+      <div class="h5 mb-0">{{ value }}</div>
+    </div>
+    <div class="text-end">
+      {% if subtitle %}<small class="text-muted">{{ subtitle }}</small>{% endif %}
+    </div>
+  </div>
+</div>

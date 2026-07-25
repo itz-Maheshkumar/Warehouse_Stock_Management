@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}CatParts India Intelligence{% endblock %}
+{% block content %}
+<div class="hero-banner p-4 mb-4">
+  <div class="row align-items-center gy-4">
+    <div class="col-lg-8">
+      <span class="cta-chip"><i class="bi bi-bar-chart-line-fill"></i> Enterprise Warehouse Intelligence</span>
+      <h1 class="title mt-3">Operational readiness for critical spare parts and stockout risk.</h1>
+      <p class="lead text-muted">Align inventory decisions with demand forecasting, warehouse transfers, and dealer orders—all from a single dashboard.</p>
+      <ul class="hero-features">
+        <li><i class="bi bi-check-circle-fill"></i> Centralized stock health, risk and demand insights</li>
+        <li><i class="bi bi-check-circle-fill"></i> Policy-driven recommendations for reorders and transfers</li>
+        <li><i class="bi bi-check-circle-fill"></i> Responsive layout optimized for desktop and mobile operations</li>
+      </ul>
+      <div class="mt-3">
+        <a href="{% url 'parts_frontend:inventory' %}" class="btn btn-primary btn-lg me-2">View Inventory</a>
+        <a href="{% url 'parts_frontend:recommendations' %}" class="btn btn-outline-primary btn-lg">View Recommendations</a>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card shadow-sm p-4 bg-white border border-0">
+        <div class="d-flex align-items-center mb-3">
+          <span class="badge bg-success me-2">Live</span>
+          <div class="small text-muted">Connected warehouse operations</div>
+        </div>
+        <div class="fw-semibold mb-2">Latest system health</div>
+        <div class="d-flex justify-content-between text-muted mb-3">
+          <div>Latency</div><div>89ms</div>
+        </div>
+        <div class="d-flex justify-content-between text-muted mb-3">
+          <div>Data sync</div><div>3 mins ago</div>
+        </div>
+        <div class="d-flex justify-content-between text-muted">
+          <div>Service uptime</div><div>99.98%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-2 col-md-4">
+    {% include 'components/kpi_card.html' with title='Total Parts' value=kpis.total_parts %}
+  </div>
+  <div class="col-lg-2 col-md-4">
+    {% include 'components/kpi_card.html' with title='Inventory Value' value='₹'|add:kpis.inventory_value|floatformat:0 %}
+  </div>
+  <div class="col-lg-2 col-md-4">
+    {% include 'components/kpi_card.html' with title='Critical Parts' value=kpis.critical_parts %}
+  </div>
+  <div class="col-lg-2 col-md-4">
+    {% include 'components/kpi_card.html' with title='High Risk Parts' value=kpis.high_risk_parts %}
+  </div>
+  <div class="col-lg-2 col-md-4">
+    {% include 'components/kpi_card.html' with title='Open Dealer Orders' value=kpis.open_orders %}
+  </div>
+  <div class="col-lg-2 col-md-4">
+    {% include 'components/kpi_card.html' with title='Pending Recommendations' value=kpis.pending_recommendations %}
+  </div>
+</div>
+
+<div class="row mt-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-3 p-3">
+      <h5>Inventory Health</h5>
+      <canvas id="healthDonut" height="220"></canvas>
+      <div class="mt-2 d-flex justify-content-between small text-muted">
+        <div>Healthy: {{ health.healthy }}</div>
+        <div>Low: {{ health.low }}</div>
+        <div>Critical: {{ health.critical }}</div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm p-3">
+      <h5>Top Recommendations</h5>
+      {% for r in recommendations %}
+        <div class="mb-2">
+          <div class="fw-semibold">{{ r.type }} — {{ r.part }}</div>
+          <div class="small text-muted">{{ r.qty|default:'—' }} {{ r.warehouse }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card shadow-sm p-3 mb-3">
+      <h5>Stockout Risk Alerts</h5>
+      <div class="table-responsive">
+      <table class="table table-hover">
+        <thead class="table-light">
+          <tr>
+            <th>Part</th>
+            <th>Warehouse</th>
+            <th>Current Stock</th>
+            <th>Forecast Demand</th>
+            <th>Risk</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in alerts %}
+          <tr>
+            <td><a href="{% url 'parts_frontend:part_detail' pk=a.part_id %}">{{ a.part_name }}</a></td>
+            <td>{{ a.warehouse }}</td>
+            <td>{{ a.available }}</td>
+            <td>{{ a.forecast }}</td>
+            <td>{{ a.risk_percent }}%</td>
+            <td>{% include 'components/risk_badge.html' with level=a.risk_level %}</td>
+            <td><a href="{% url 'parts_frontend:part_detail' pk=a.part_id %}" class="btn btn-sm btn-outline-primary">View</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="card shadow-sm p-3 mb-3">
+      <h5>India Regional Inventory (INR)</h5>
+      <canvas id="regionalBar" height="120"></canvas>
+    </div>
+
+    <div class="card shadow-sm p-3">
+      <h5>Recent Dealer Orders</h5>
+      <div class="table-responsive">
+        <table class="table">
+          <thead class="table-light"><tr><th>Order ID</th><th>Dealer</th><th>Part</th><th>Qty</th><th>Priority</th><th>Status</th><th>Date</th></tr></thead>
+          <tbody>
+          {% for o in recent_orders %}
+            <tr>
+              <td>#{{ o.id }}</td>
+              <td>{{ o.dealer.name }}</td>
+              <td>{{ o.part.name }}</td>
+              <td>{{ o.quantity }}</td>
+              <td><span class="badge bg-secondary">Normal</span></td>
+              <td>{% if not o.fulfilled %}<span class="badge bg-warning">Pending</span>{% else %}<span class="badge bg-success">Fulfilled</span>{% endif %}</td>
+              <td>{{ o.created_at|date:"d M Y" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="text-muted">No recent orders</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mt-4">
+  <div class="alert alert-info">Purpose: Predict spare-parts stockouts before they affect equipment uptime and recommend the best inventory action.</div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+// Health donut data
+const healthData = [{{ health.healthy }}, {{ health.low }}, {{ health.critical }}];
+const healthLabels = ['Healthy','Low','Critical'];
+const healthColors = ['#2ecc71','#f1c40f','#e74c3c'];
+new Chart(document.getElementById('healthDonut'), {
+  type: 'doughnut',
+  data: { labels: healthLabels, datasets: [{ data: healthData, backgroundColor: healthColors }] },
+  options: { plugins: { legend: { position: 'bottom' } } }
+});
+
+// Regional bar
+const regions = {{ regions|safe }};
+const regionValues = {{ region_values|safe }};
+new Chart(document.getElementById('regionalBar'), {
+  type: 'bar',
+  data: { labels: regions, datasets: [{ label: 'Inventory Value (INR)', data: regionValues, backgroundColor: '#0d6efd' }] },
+  options: { scales: { y: { ticks: { callback: function(v){ return '₹' + (v/100000).toFixed(1) + 'L'; } } } }
+});
+</script>
+{% endblock %}

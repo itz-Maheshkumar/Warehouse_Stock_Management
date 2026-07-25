@@ -1,0 +1,43 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CatParts India - {% block title %}{% endblock %}</title>
+    <meta name="description" content="CatParts India warehouse stock management dashboard with healthy inventory and risk analytics." />
+    <meta name="theme-color" content="#0d6efd" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="icon" href="{% static 'images/catparts-logo.svg' %}" type="image/svg+xml">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body class="bg-surface">
+    <div class="page-shell">
+      <div class="d-flex" id="wrapper">
+      <!-- Sidebar -->
+      {% include 'components/sidebar.html' %}
+
+      <!-- Page Content -->
+      <div id="page-content-wrapper" class="w-100">
+        {% include 'components/topbar.html' %}
+        <div class="container-fluid mt-4">
+          {% block content %}{% endblock %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/app.js' %}"></script>
+    <script src="{% static 'js/charts.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+  </body>
+</html>

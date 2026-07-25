@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Reports{% endblock %}
+{% block page_title %}Reports & Analytics{% endblock %}
+{% block content %}
+<div class="card shadow-sm p-3">
+  <h5>Reports</h5>
+  <div class="row">
+    <div class="col-md-6"><canvas id="report1" height="120"></canvas></div>
+    <div class="col-md-6"><canvas id="report2" height="120"></canvas></div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+new Chart(document.getElementById('report1'), { type: 'line', data: { labels: ['Jan','Feb','Mar','Apr'], datasets: [{ label: 'Inventory value', data: [10,12,9,14], borderColor:'#0d6efd' }] } });
+new Chart(document.getElementById('report2'), { type: 'bar', data: { labels: ['Low','Medium','High'], datasets: [{ label: 'Risk', data: [120,40,12], backgroundColor:['#2ecc71','#f1c40f','#e74c3c'] }] });
+</script>
+{% endblock %}

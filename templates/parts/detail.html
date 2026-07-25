@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}{{ part.name }}{% endblock %}
+{% block page_title %}Part Detail{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card shadow-sm hero-panel p-3 mb-3">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <h4>{{ part.sku }} — {{ part.name }}</h4>
+          <div class="small text-muted">Category: {{ part.category }} • Criticality: {{ part.criticality }}</div>
+        </div>
+        <div class="text-end">
+          <div class="h5">Risk: {{ risk_score }}%</div>
+          {% include 'components/risk_badge.html' with level=risk_level %}
+        </div>
+      </div>
+      <hr>
+      <div class="row">
+        <div class="col-md-6">
+          <h6>Inventory</h6>
+          <ul class="list-unstyled">
+            {% for inv in inventories %}
+              <li>{{ inv.warehouse.name }} — On Hand: {{ inv.available }} • Reserved: {{ inv.reserved }} • Incoming: {{ inv.incoming }}</li>
+            {% empty %}
+              <li class="text-muted">No inventory records</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div class="col-md-6">
+          <h6>Supplier / Lead time</h6>
+          <div>Supplier: ABC Components</div>
+          <div>Lead time: 20 days</div>
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <button class="btn btn-primary">Create Transfer</button>
+        <button class="btn btn-outline-primary">Create Reorder</button>
+      </div>
+    </div>
+
+    <div class="card shadow-sm p-3 mb-3">
+      <h5>Demand History & Forecast</h5>
+      <canvas id="demandChart" height="120"></canvas>
+    </div>
+
+    {% if recommendation %}
+    <div class="card p-3">
+      <h5>Recommendation</h5>
+      <div class="fw-semibold">{{ recommendation.action }} {{ recommendation.qty }} units</div>
+      <div class="small text-muted">From: {{ recommendation.from }} • To: {{ recommendation.to }}</div>
+      <div class="mt-2">{{ recommendation.reason }}</div>
+      <div class="mt-3">
+        <button class="btn btn-success">Approve Transfer</button>
+        <button class="btn btn-outline-secondary">Reject</button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card p-3 mb-3">
+      <h6>Key Facts</h6>
+      <div>Unit cost: ₹2,500</div>
+      <div>Reorder level: {{ part.reorder_level }}</div>
+      <div class="mt-2">Forecast (next period): {{ forecast.0 }}</div>
+    </div>
+
+    <div class="card p-3">
+      <h6>Quick Actions</h6>
+      <button class="btn btn-outline-primary w-100 mb-2">View Recommendation</button>
+      <button class="btn btn-outline-success w-100 mb-2">Create Transfer</button>
+      <button class="btn btn-primary w-100">Create Reorder</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+const labels = {{ months|safe }};
+const demand = {{ demand|safe }};
+const forecast = {{ forecast|safe }};
+new Chart(document.getElementById('demandChart'), {
+  type: 'line',
+  data: { labels: labels, datasets: [{ label: 'Historical', data: demand, borderColor: '#0d6efd', tension: 0.3 }, { label: 'Forecast', data: forecast, borderColor: '#198754', borderDash: [6,3], tension:0.3 }] },
+  options: { scales: { y: { beginAtZero: true } } }
+});
+</script>
+{% endblock %}

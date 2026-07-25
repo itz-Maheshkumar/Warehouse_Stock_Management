@@ -1,0 +1,9 @@
+{% if level == 'Critical' %}
+  <span class="badge bg-danger">{{ level }}</span>
+{% elif level == 'High' %}
+  <span class="badge bg-warning text-dark">{{ level }}</span>
+{% elif level == 'Medium' %}
+  <span class="badge bg-info text-dark">{{ level }}</span>
+{% else %}
+  <span class="badge bg-success">{{ level }}</span>
+{% endif %}

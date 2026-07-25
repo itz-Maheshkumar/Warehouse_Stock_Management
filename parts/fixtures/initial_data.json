@@ -1,0 +1,106 @@
+[
+  {
+    "model": "parts.warehouse",
+    "pk": 1,
+    "fields": {
+      "name": "Chennai Regional Parts Distribution Center",
+      "location": "Chennai"
+    }
+  },
+  {
+    "model": "parts.part",
+    "pk": 1,
+    "fields": {
+      "sku": "CAT-ENG-001",
+      "name": "Engine Oil Filter",
+      "category": "Engine",
+      "reorder_level": 100,
+      "criticality": "Medium"
+    }
+  },
+  {
+    "model": "parts.part",
+    "pk": 2,
+    "fields": {
+      "sku": "CAT-HYD-002",
+      "name": "Hydraulic Pump Seal Kit",
+      "category": "Hydraulic",
+      "reorder_level": 50,
+      "criticality": "High"
+    }
+  },
+  {
+    "model": "parts.part",
+    "pk": 3,
+    "fields": {
+      "sku": "CAT-FLT-003",
+      "name": "Fuel Filter",
+      "category": "Engine",
+      "reorder_level": 150,
+      "criticality": "Medium"
+    }
+  },
+  {
+    "model": "parts.part",
+    "pk": 4,
+    "fields": {
+      "sku": "CAT-TRK-004",
+      "name": "Track Roller Assembly",
+      "category": "Undercarriage",
+      "reorder_level": 20,
+      "criticality": "Critical"
+    }
+  },
+  {
+    "model": "parts.inventory",
+    "pk": 1,
+    "fields": {
+      "part": 1,
+      "warehouse": 1,
+      "available": 120,
+      "reserved": 5,
+      "incoming": 20
+    }
+  },
+  {
+    "model": "parts.inventory",
+    "pk": 2,
+    "fields": {
+      "part": 2,
+      "warehouse": 1,
+      "available": 18,
+      "reserved": 2,
+      "incoming": 0
+    }
+  },
+  {
+    "model": "parts.inventory",
+    "pk": 3,
+    "fields": {
+      "part": 3,
+      "warehouse": 1,
+      "available": 250,
+      "reserved": 10,
+      "incoming": 50
+    }
+  },
+  {
+    "model": "parts.inventory",
+    "pk": 4,
+    "fields": {
+      "part": 4,
+      "warehouse": 1,
+      "available": 5,
+      "reserved": 1,
+      "incoming": 0
+    }
+  },
+  {
+    "model": "parts.dealer",
+    "pk": 1,
+    "fields": {
+      "name": "Demo Dealer Tamil Nadu",
+      "region": "Tamil Nadu"
+    }
+  }
+]

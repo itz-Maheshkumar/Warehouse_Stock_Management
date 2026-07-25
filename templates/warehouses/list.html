@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Warehouses{% endblock %}
+{% block page_title %}Warehouses{% endblock %}
+{% block content %}
+<div class="row">
+  {% for w in warehouses %}
+    <div class="col-md-3">
+      <div class="card shadow-sm p-3 mb-3">
+        <h6 class="mb-2">{{ w.warehouse.name }}</h6>
+        <div class="small text-muted">Inventory Value: ₹{{ w.value|intcomma }}</div>
+        <div>Total parts: {{ w.parts }}</div>
+        <div class="mt-2"><a href="#" class="btn btn-sm btn-outline-primary">View</a></div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

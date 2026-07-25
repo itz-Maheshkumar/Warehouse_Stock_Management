@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Stockout Risk{% endblock %}
+{% block page_title %}Stockout Risk Management{% endblock %}
+{% block content %}
+<div class="card shadow-sm p-3">
+  <h5>Stockout Risk</h5>
+  <div class="row">
+    <div class="col-md-3">Critical: <span class="fw-bold text-danger">{{ rows|length }}</span></div>
+    <div class="col-md-9"></div>
+  </div>
+  <div class="table-responsive mt-3">
+    <table class="table table-hover">
+      <thead class="table-light"><tr><th>Part</th><th>Warehouse</th><th>Current Stock</th><th>Forecast Demand</th><th>Lead Time (days)</th><th>Criticality</th><th>Risk Score</th><th>Risk Level</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td><a href="{% url 'parts_frontend:part_detail' pk=r.part.id %}">{{ r.part.name }}</a></td>
+            <td>{{ r.warehouse.name }}</td>
+            <td>{{ r.available }}</td>
+            <td>{{ r.forecast }}</td>
+            <td>{{ r.lead_time }}</td>
+            <td>{{ r.criticality }}</td>
+            <td>{{ r.risk_score }}%</td>
+            <td>{% include 'components/risk_badge.html' with level=r.risk_level %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Inventory{% endblock %}
+{% block page_title %}Inventory Management{% endblock %}
+{% block content %}
+<div class="card shadow-sm p-3">
+  <div class="d-flex justify-content-between mb-3 align-items-center">
+    <h5>Inventory</h5>
+    <form class="d-flex" method="get">
+      <input name="q" class="form-control form-control-sm me-2" placeholder="Search part or SKU" value="{{ request.GET.q }}">
+      <button class="btn btn-sm btn-primary">Search</button>
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-striped table-hover">
+      <thead class="table-light"><tr><th>Part Number</th><th>Part Name</th><th>Category</th><th>Warehouse</th><th>Available</th><th>Reserved</th><th>Incoming</th><th>Reorder Level</th><th>Risk</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for inv in inventories %}
+        <tr>
+          <td>{{ inv.part.sku }}</td>
+          <td><a href="{% url 'parts_frontend:part_detail' pk=inv.part.id %}">{{ inv.part.name }}</a></td>
+          <td>{{ inv.part.category }}</td>
+          <td>{{ inv.warehouse.name }}</td>
+          <td>{{ inv.available }}</td>
+          <td>{{ inv.reserved }}</td>
+          <td>{{ inv.incoming }}</td>
+          <td>{{ inv.part.reorder_level }}</td>
+          <td>--%</td>
+          <td>{% include 'components/risk_badge.html' with level=inv.part.criticality|default:'Medium' %}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{% url 'parts_frontend:part_detail' pk=inv.part.id %}">View Details</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="11">No inventory records found</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

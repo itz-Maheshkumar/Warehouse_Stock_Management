@@ -1,0 +1,59 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CatParts India - Sign In</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <style>
+      body { background: linear-gradient(135deg, #0f1f47 0%, #123269 48%, #0b3d71 100%); color: #f7f9fc; }
+      .login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+      .login-card { max-width: 420px; width: 100%; border-radius: 24px; background: rgba(255,255,255,0.96); color: #0f1f47; box-shadow: 0 36px 80px rgba(11, 45, 89, .24); }
+      .login-card .form-control { border-radius: 12px; }
+      .login-card .btn-primary { border-radius: 12px; }
+      .login-message { margin-bottom: 1rem; }
+      .brand-area { text-align: center; }
+      .brand-area img { width: 60px; height: auto; }
+    </style>
+  </head>
+  <body>
+    <div class="login-wrapper">
+      <div class="login-card p-4">
+        <div class="brand-area mb-4">
+          <img src="{% static 'images/catparts-logo.svg' %}" alt="CatParts India" class="mb-3 brand-logo" onerror="this.style.display='none'">
+          <h3 class="fw-bold mb-1">CatParts India</h3>
+          <p class="text-muted mb-0">Superuser sign in to access the enterprise dashboard</p>
+        </div>
+
+        {% if messages %}
+          <div class="login-message">
+            {% for message in messages %}
+              <div class="alert alert-{{ message.tags|default:'danger' }} small mb-2" role="alert">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ next }}">
+          <div class="mb-3">
+            <label class="form-label">Username</label>
+            <input class="form-control" name="username" placeholder="Enter your username" required autofocus>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Password</label>
+            <input class="form-control" name="password" type="password" placeholder="Enter your password" required>
+          </div>
+          <div class="d-grid">
+            <button class="btn btn-primary btn-lg" type="submit">Sign In</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

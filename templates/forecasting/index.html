@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}Demand Forecast{% endblock %}
+{% block page_title %}Demand Forecasting{% endblock %}
+{% block content %}
+<div class="card shadow-sm hero-panel p-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h5>Demand Forecast</h5>
+      <div class="small text-muted">Predict upcoming demand and align warehouse replenishment.</div>
+    </div>
+    <span class="data-chip">Forecast horizon: 30 days</span>
+  </div>
+  <form class="row mb-3">
+    <div class="col-md-4"><select class="form-select"><option>Choose part...</option>{% for p in parts %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><select class="form-select"><option>Chennai</option><option>Pune</option></select></div>
+    <div class="col-md-3"><select class="form-select"><option>Next 30 days</option></select></div>
+    <div class="col-md-2"><button class="btn btn-primary w-100">Run Forecast</button></div>
+  </form>
+  <canvas id="forecastChart" height="120"></canvas>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const labels = {{ labels|safe }};
+const hist = {{ historical|safe }};
+const fc = {{ forecast|safe }};
+new Chart(document.getElementById('forecastChart'), { type: 'line', data: { labels: labels, datasets: [{ label: 'Historical', data: hist, borderColor: '#0d6efd' }, { label: 'Forecast', data: fc, borderColor: '#dc3545' }] } });
+</script>
+{% endblock %}

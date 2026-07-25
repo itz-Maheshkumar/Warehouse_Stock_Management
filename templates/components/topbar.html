@@ -1,0 +1,30 @@
+{% load static %}
+<nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom shadow-sm sticky-top">
+  <div class="container-fluid">
+    <div class="d-flex align-items-center gap-2">
+      <button class="btn btn-sm btn-outline-secondary" id="sidebarToggle"><i class="bi bi-list"></i></button>
+      <img src="{% static 'images/catparts-logo.svg' %}" alt="CatParts India" class="brand-logo" onerror="this.style.display='none'">
+      <div class="brand-title">
+        <h4 class="mb-0">CatParts India</h4>
+        <small class="text-muted">Enterprise warehouse intelligence</small>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2 ms-auto">
+      <button class="btn btn-sm btn-outline-secondary d-lg-none" id="mobileSearchToggle"><i class="bi bi-search"></i></button>
+      <form class="d-flex ms-0 me-3 d-none d-lg-flex" role="search">
+        <input class="form-control form-control-sm me-2" type="search" placeholder="Search parts, SKUs..." aria-label="Search">
+      </form>
+      <button class="btn btn-sm btn-outline-secondary position-relative">
+        <i class="bi bi-bell"></i>
+        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">3</span>
+      </button>
+      <div class="d-flex align-items-center gap-2">
+        <div class="text-end">
+          <div class="fw-semibold">Demo User</div>
+          <small class="text-muted">Warehouse Manager</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</nav>
