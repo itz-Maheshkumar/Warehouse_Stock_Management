@@ -28,15 +28,24 @@
           </ul>
         </div>
         <div class="col-md-6">
-          <h6>Supplier / Lead time</h6>
-          <div>Supplier: ABC Components</div>
-          <div>Lead time: 20 days</div>
+          <h6>Inventory Details</h6>
+          <ul class="list-unstyled">
+            {% for inv in inventories %}
+              <li class="mb-1">
+                <strong>{{ inv.warehouse.name }}</strong><br>
+                Available: <span class="fw-bold text-success">{{ inv.available_stock }}</span> • Reserved: {{ inv.reserved }} • On Hand: {{ inv.on_hand }} • In Transit: {{ inv.in_transit }}
+              </li>
+            {% empty %}
+              <li class="text-muted">No inventory records</li>
+            {% endfor %}
+          </ul>
         </div>
-      </div>
-
-      <div class="mt-3">
-        <button class="btn btn-primary">Create Transfer</button>
-        <button class="btn btn-outline-primary">Create Reorder</button>
+        <div class="col-md-6">
+          <h6>Supplier / Lead time</h6>
+          <div>Supplier: {{ part.supplier_name }}</div>
+          <div>Supplier Lead time: {{ part.supplier_lead_time_days }} days</div>
+          <div>Safety stock: {{ part.safety_stock }} units</div>
+        </div>
       </div>
     </div>
 
@@ -46,32 +55,97 @@
     </div>
 
     {% if recommendation %}
-    <div class="card p-3">
-      <h5>Recommendation</h5>
-      <div class="fw-semibold">{{ recommendation.action }} {{ recommendation.qty }} units</div>
-      <div class="small text-muted">From: {{ recommendation.from }} • To: {{ recommendation.to }}</div>
-      <div class="mt-2">{{ recommendation.reason }}</div>
-      <div class="mt-3">
-        <button class="btn btn-success">Approve Transfer</button>
-        <button class="btn btn-outline-secondary">Reject</button>
+    <div class="card shadow-sm p-3 mb-3 border-primary">
+      <div class="d-flex justify-content-between align-items-center">
+        <h5>Smart Recommendation</h5>
+        <span class="badge bg-info text-dark">Status: {{ recommendation.status }}</span>
+      </div>
+      <div class="fw-semibold h6 text-primary">{{ recommendation.action }} {{ recommendation.qty }} units</div>
+      <div class="small text-muted mb-2">From: {{ recommendation.from }} • To: {{ recommendation.to }}</div>
+      <div class="mb-3">{{ recommendation.reason }}</div>
+
+      <div class="d-flex gap-2">
+        {% if recommendation.status == 'PENDING' %}
+        <form method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="approve_recommendation">
+          <input type="hidden" name="recommendation_id" value="{{ recommendation.id }}">
+          <button type="submit" class="btn btn-success">Approve Recommendation</button>
+        </form>
+        <form method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reject_recommendation">
+          <input type="hidden" name="recommendation_id" value="{{ recommendation.id }}">
+          <button type="submit" class="btn btn-outline-danger">Reject</button>
+        </form>
+        {% elif recommendation.status == 'APPROVED' and recommendation.transfer %}
+          {% if recommendation.transfer.status == 'APPROVED' %}
+          <form method="post" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="dispatch_transfer">
+            <input type="hidden" name="transfer_id" value="{{ recommendation.transfer.id }}">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-truck"></i> Dispatch Transfer ({{ recommendation.transfer.reference }})</button>
+          </form>
+          {% elif recommendation.transfer.status == 'DISPATCHED' %}
+          <form method="post" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="receive_transfer">
+            <input type="hidden" name="transfer_id" value="{{ recommendation.transfer.id }}">
+            <button type="submit" class="btn btn-success"><i class="bi bi-box-arrow-in-down"></i> Receive Transfer ({{ recommendation.transfer.reference }})</button>
+          </form>
+          {% elif recommendation.transfer.status == 'RECEIVED' %}
+          <span class="badge bg-success p-2"><i class="bi bi-check-circle-fill"></i> Transfer Received & Completed</span>
+          {% endif %}
+        {% endif %}
       </div>
     </div>
     {% endif %}
+
+    <div class="card shadow-sm p-3 mb-3">
+      <h5>Immutable Inventory Ledger History</h5>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped">
+          <thead class="table-light">
+            <tr><th>Date</th><th>Warehouse</th><th>Type</th><th>Qty</th><th>Ref</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            {% for t in transactions %}
+            <tr>
+              <td>{{ t.created_at|date:"d M Y H:i" }}</td>
+              <td>{{ t.inventory.warehouse.name }}</td>
+              <td><span class="badge bg-secondary">{{ t.transaction_type }}</span></td>
+              <td class="fw-bold {% if t.quantity > 0 %}text-success{% else %}text-danger{% endif %}">{{ t.quantity }}</td>
+              <td>{{ t.reference_type }}:{{ t.reference_id }}</td>
+              <td><small class="text-muted">{{ t.notes }}</small></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-muted">No inventory transactions logged.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <div class="col-lg-4">
-    <div class="card p-3 mb-3">
-      <h6>Key Facts</h6>
-      <div>Unit cost: ₹2,500</div>
+    <div class="card p-3 mb-3 shadow-sm">
+      <h6>Key Inventory Facts</h6>
+      <div>Unit cost: ₹{{ part.unit_cost }}</div>
       <div>Reorder level: {{ part.reorder_level }}</div>
-      <div class="mt-2">Forecast (next period): {{ forecast.0 }}</div>
+      <div>Safety stock: {{ part.safety_stock }}</div>
+      <div>Supplier lead time: {{ part.supplier_lead_time_days }} days</div>
+      <div class="mt-2 fw-semibold">20d Lead-Time Demand: {{ risk_info.lead_time_demand }}</div>
     </div>
 
-    <div class="card p-3">
-      <h6>Quick Actions</h6>
-      <button class="btn btn-outline-primary w-100 mb-2">View Recommendation</button>
-      <button class="btn btn-outline-success w-100 mb-2">Create Transfer</button>
-      <button class="btn btn-primary w-100">Create Reorder</button>
+    <div class="card p-3 shadow-sm">
+      <h6>Quick Operations</h6>
+      <form method="post" class="mt-2">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_reorder">
+        <label class="form-label small">Reorder Quantity</label>
+        <input type="number" name="quantity" class="form-control form-control-sm mb-2" value="50">
+        <button type="submit" class="btn btn-primary w-100 me-2"><i class="bi bi-cart-plus"></i> Record Supplier Receipt</button>
+      </form>
     </div>
   </div>
 </div>

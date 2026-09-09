@@ -1,19 +1,39 @@
+import json
 import logging
-from rest_framework import generics
+from datetime import datetime, timedelta, date
 from django.shortcuts import render, get_object_or_404, redirect
-from django.db.models import Sum
+from django.db.models import Sum, F, Q
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.contrib.auth.decorators import user_passes_test
-from .models import Part, Inventory, Warehouse, Dealer, Order
-from .serializers import PartSerializer, InventorySerializer, WarehouseSerializer, DealerSerializer, OrderSerializer
-import random
-from datetime import datetime, timedelta
+from django.http import JsonResponse
+from rest_framework import generics
 
-superuser_required = user_passes_test(lambda u: u.is_superuser, login_url='parts_frontend:login')
+from .models import (
+    Part, Inventory, Warehouse, Dealer, Order, OrderItem,
+    InventoryTransaction, DemandHistory, ForecastResult,
+    StockTransfer, Recommendation, Notification, AuditLog
+)
+from .serializers import (
+    PartSerializer, InventorySerializer, WarehouseSerializer, DealerSerializer, OrderSerializer,
+    InventoryTransactionSerializer, StockTransferSerializer, RecommendationSerializer, NotificationSerializer
+)
+from parts.services.inventory_service import get_or_create_inventory, record_transaction
+from parts.services.order_service import create_dealer_order, process_dealer_order, ship_dealer_order, cancel_dealer_order
+from parts.services.forecast_service import generate_forecast, calculate_forecast_accuracy
+from parts.services.risk_service import calculate_stockout_risk
+from parts.services.recommendation_service import generate_recommendation_for_part_warehouse, generate_all_recommendations
+from parts.services.transfer_service import create_transfer, approve_transfer, reject_transfer, dispatch_transfer, receive_transfer
+from parts.services.notification_service import get_unread_notifications, mark_notification_as_read
+from parts.services.audit_service import log_action
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
+
+superuser_required = user_passes_test(lambda u: u.is_superuser or u.is_staff, login_url='parts_frontend:login')
 
 
-# ---- API views (existing) ----
+# ---- API Views (DRF) ----
 class PartListCreateView(generics.ListCreateAPIView):
     queryset = Part.objects.all().order_by('sku')
     serializer_class = PartSerializer
@@ -35,7 +55,7 @@ class WarehouseListView(generics.ListCreateAPIView):
 
 
 class OrderListCreateView(generics.ListCreateAPIView):
-    queryset = Order.objects.all().order_by('-created_at')
+    queryset = Order.objects.select_related('dealer', 'warehouse').prefetch_related('items__part').order_by('-created_at')
     serializer_class = OrderSerializer
 
 
@@ -44,108 +64,173 @@ class DealerListCreateView(generics.ListCreateAPIView):
     serializer_class = DealerSerializer
 
 
-# ---- Frontend views (server-rendered pages) ----
-logger = logging.getLogger(__name__)
-
-def _kpi_values():
-    total_parts = Part.objects.count()
-    inventory_value_inr = 42000000  # ₹4.2 Cr placeholder
-    critical_parts = Part.objects.filter(criticality__iexact='critical').count()
-    high_risk_parts = 28  # placeholder
-    open_orders = Order.objects.filter(fulfilled=False).count()
-    pending_recs = 19
+# ---- Context Processor / Helper for Notifications ----
+def _get_common_context(request):
+    unread_notifs = get_unread_notifications()[:5]
+    unread_count = get_unread_notifications().count()
     return {
-        'total_parts': total_parts or 250,
-        'inventory_value': inventory_value_inr,
-        'critical_parts': critical_parts or 12,
-        'high_risk_parts': high_risk_parts,
+        'unread_notifications': unread_notifs,
+        'unread_count': unread_count,
+        'current_user': request.user if request.user.is_authenticated else None,
+    }
+
+
+# ---- Server-Rendered Frontend Views ----
+
+@superuser_required
+def dashboard(request):
+    # 1. Dynamic KPIs
+    total_parts = Part.objects.count()
+    
+    inventories = Inventory.objects.select_related('part', 'warehouse').all()
+    total_inv_val = sum([inv.total_value for inv in inventories])
+
+    critical_parts = Part.objects.filter(criticality='CRITICAL').count()
+
+    open_orders = Order.objects.exclude(status='FULFILLED').count()
+    pending_recs = Recommendation.objects.filter(status='PENDING').count()
+
+    # Calculate stockout risk alerts & high risk part count
+    alerts = []
+    high_risk_count = 0
+    health_counts = {'healthy': 0, 'low': 0, 'critical': 0}
+
+    for inv in inventories:
+        risk_info = calculate_stockout_risk(inv.part, inv.warehouse)
+        score = risk_info['risk_score']
+        level = risk_info['risk_level']
+
+        if score >= 61:
+            high_risk_count += 1
+
+        if level == 'Critical':
+            health_counts['critical'] += 1
+        elif level == 'High' or level == 'Medium':
+            health_counts['low'] += 1
+        else:
+            health_counts['healthy'] += 1
+
+        if score >= 40:
+            alerts.append({
+                'part_id': inv.part.id,
+                'part_name': inv.part.name,
+                'part_sku': inv.part.sku,
+                'warehouse': inv.warehouse.name,
+                'available': inv.available_stock,
+                'forecast': int(risk_info['forecast_30d']),
+                'risk_percent': score,
+                'risk_level': level,
+            })
+
+    alerts.sort(key=lambda x: x['risk_percent'], reverse=True)
+    alerts = alerts[:6]
+
+    kpis = {
+        'total_parts': total_parts,
+        'inventory_value': total_inv_val,
+        'formatted_inventory_value': f"₹{total_inv_val:,.2f}",
+        'critical_parts': critical_parts,
+        'high_risk_parts': high_risk_count,
         'open_orders': open_orders,
         'pending_recommendations': pending_recs,
     }
 
+    # 2. Recommendations for dashboard
+    top_recommendations = Recommendation.objects.filter(status='PENDING').select_related(
+        'part', 'warehouse', 'source_warehouse', 'target_warehouse'
+    ).order_by('-risk_score')[:5]
 
-@superuser_required
-def dashboard(request):
-    kpis = _kpi_values()
+    rec_display = []
+    for r in top_recommendations:
+        wh_str = r.warehouse.name
+        if r.recommendation_type == 'TRANSFER' and r.source_warehouse and r.target_warehouse:
+            wh_str = f"{r.source_warehouse.name} → {r.target_warehouse.name}"
+        rec_display.append({
+            'type': r.recommendation_type,
+            'part': r.part.name,
+            'qty': r.quantity,
+            'warehouse': wh_str,
+            'id': r.id,
+        })
 
-    # Inventory health breakdown mock
-    health = {'healthy': 182, 'low': 40, 'critical': 28}
+    # 3. Regional inventory bar chart (JSON formatted for Chart.js)
+    warehouses = Warehouse.objects.all()
+    regions = [w.name for w in warehouses]
+    region_values = []
+    for w in warehouses:
+        val = sum([inv.total_value for inv in Inventory.objects.filter(warehouse=w).select_related('part')])
+        region_values.append(round(val, 2))
 
-    # Stockout alerts: derive from inventories and parts where possible, otherwise mock
-    alerts = []
-    inventories = Inventory.objects.select_related('part', 'warehouse').all()[:10]
-    if inventories:
-        for inv in inventories:
-            forecast = random.randint(20, 120)
-            risk = min(99, int((forecast - inv.available) / max(1, forecast) * 100))
-            level = 'Low'
-            if risk >= 85:
-                level = 'Critical'
-            elif risk >= 60:
-                level = 'High'
-            elif risk >= 40:
-                level = 'Medium'
-            alerts.append({
-                'part_name': inv.part.name,
-                'warehouse': inv.warehouse.name,
-                'available': inv.available,
-                'forecast': forecast,
-                'risk_percent': risk,
-                'risk_level': level,
-                'part_id': inv.part.id,
-            })
-    else:
-        # fallback mock data
-        alerts = [
-            {'part_name': 'Hydraulic Pump Seal Kit', 'warehouse': 'Chennai', 'available': 18, 'forecast': 85, 'risk_percent': 91, 'risk_level': 'Critical', 'part_id': 2},
-            {'part_name': 'Track Roller Assembly', 'warehouse': 'Pune', 'available': 5, 'forecast': 15, 'risk_percent': 88, 'risk_level': 'Critical', 'part_id': 4},
-            {'part_name': 'Engine Gasket Kit', 'warehouse': 'Delhi NCR', 'available': 12, 'forecast': 40, 'risk_percent': 72, 'risk_level': 'High', 'part_id': 5},
-            {'part_name': 'Fuel Filter', 'warehouse': 'Bengaluru', 'available': 80, 'forecast': 100, 'risk_percent': 55, 'risk_level': 'Medium', 'part_id': 3},
-        ]
+    # 4. Recent dealer orders
+    recent_orders = Order.objects.select_related('dealer', 'warehouse', 'part').prefetch_related('items__part').order_by('-created_at')[:8]
 
-    # Recommendations mock
-    recommendations = [
-        {'type': 'REORDER', 'part': 'Hydraulic Pump Seal Kit', 'qty': 100, 'warehouse': 'Chennai'},
-        {'type': 'TRANSFER', 'part': 'Track Roller Assembly', 'qty': 20, 'warehouse': 'Pune → Chennai'},
-        {'type': 'EXPEDITE', 'part': 'Engine Gasket Kit', 'qty': None, 'warehouse': 'Supplier: ABC Components'},
-        {'type': 'HOLD', 'part': 'Engine Oil Filter', 'qty': None, 'warehouse': 'Inventory healthy'},
-    ]
-
-    # Regional inventory bar chart data (mocked)
-    regions = ['Chennai', 'Pune', 'Delhi NCR', 'Bengaluru']
-    values = [random.randint(2000000, 15000000) for _ in regions]
-
-    # Recent dealer orders (mock or from DB)
-    recent_orders = Order.objects.select_related('dealer', 'part').order_by('-created_at')[:8]
-
-    logger.info('Rendering dashboard', extra={'path': request.path, 'user': request.user.username if request.user.is_authenticated else 'anonymous'})
     context = {
+        **_get_common_context(request),
         'kpis': kpis,
-        'health': health,
+        'health': health_counts,
+        'health_counts_json': json.dumps([health_counts['healthy'], health_counts['low'], health_counts['critical']]),
         'alerts': alerts,
-        'recommendations': recommendations,
+        'recommendations': rec_display,
         'regions': regions,
-        'region_values': values,
+        'region_values': region_values,
+        'regions_json': json.dumps(regions),
+        'region_values_json': json.dumps(region_values),
         'recent_orders': recent_orders,
     }
     return render(request, 'dashboard/index.html', context)
 
 
 @superuser_required
+def parts_list(request):
+    """View to list all spare parts catalog with inventory totals."""
+    q = request.GET.get('q', '').strip()
+    qs = Part.objects.all().order_by('sku')
+    if q:
+        qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(category__icontains=q))
+
+    parts_with_stock = []
+    for part in qs:
+        tot_avail = sum([inv.available_stock for inv in Inventory.objects.filter(part=part)])
+        parts_with_stock.append({
+            'part': part,
+            'total_available': tot_avail
+        })
+
+    context = {
+        **_get_common_context(request),
+        'parts_with_stock': parts_with_stock,
+    }
+    return render(request, 'parts/list.html', context)
+
+
+@superuser_required
 def inventory_list(request):
     qs = Inventory.objects.select_related('part', 'warehouse')
-    # Basic filters from GET
-    q = request.GET.get('q')
-    warehouse = request.GET.get('warehouse')
-    if q:
-        qs = qs.filter(part__name__icontains=q) | qs.filter(part__sku__icontains=q)
-    if warehouse:
-        qs = qs.filter(warehouse__name__icontains=warehouse)
+    q = request.GET.get('q', '').strip()
+    warehouse_filter = request.GET.get('warehouse', '').strip()
 
-    page = request.GET.get('page', 1)
-    inventories = qs.order_by('-available')[:50]
-    logger.info('Rendering inventory list', extra={'path': request.path, 'query': request.GET.dict()})
-    context = {'inventories': inventories}
+    if q:
+        qs = qs.filter(Q(part__name__icontains=q) | Q(part__sku__icontains=q))
+    if warehouse_filter:
+        qs = qs.filter(warehouse__name__icontains=warehouse_filter)
+
+    inventories = qs.order_by('-on_hand')[:100]
+
+    # Attach calculated risk score & level to each inventory
+    inv_list = []
+    for inv in inventories:
+        risk_info = calculate_stockout_risk(inv.part, inv.warehouse)
+        inv_list.append({
+            'inv': inv,
+            'risk_score': risk_info['risk_score'],
+            'risk_level': risk_info['risk_level'],
+        })
+
+    context = {
+        **_get_common_context(request),
+        'inventories_with_risk': inv_list,
+        'inventories': inventories,
+    }
     return render(request, 'inventory/list.html', context)
 
 
@@ -154,127 +239,419 @@ def part_detail(request, pk):
     part = get_object_or_404(Part, pk=pk)
     inventories = Inventory.objects.filter(part=part).select_related('warehouse')
 
-    # demand history mock (6 months)
-    now = datetime.now()
+    # Handle workflow POST actions
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        rec_id = request.POST.get('recommendation_id')
+        transfer_id = request.POST.get('transfer_id')
+
+        try:
+            if action == 'approve_recommendation' and rec_id:
+                rec = get_object_or_404(Recommendation, pk=rec_id)
+                if rec.recommendation_type == 'TRANSFER' and rec.source_warehouse:
+                    transfer = rec.transfer
+                    if not transfer:
+                        transfer = create_transfer(
+                            from_warehouse=rec.source_warehouse,
+                            to_warehouse=rec.target_warehouse,
+                            part=rec.part,
+                            quantity=rec.quantity or 50,
+                            reason=rec.reason,
+                            user=request.user
+                        )
+                        rec.transfer = transfer
+                        rec.save()
+                    approve_transfer(transfer, user=request.user)
+                    messages.success(request, f"Transfer {transfer.reference} approved successfully.")
+                else:
+                    rec.status = 'APPROVED'
+                    rec.approved_by = request.user
+                    rec.save()
+                    messages.success(request, f"Recommendation #{rec.id} approved.")
+
+            elif action == 'reject_recommendation' and rec_id:
+                rec = get_object_or_404(Recommendation, pk=rec_id)
+                if rec.transfer:
+                    reject_transfer(rec.transfer, user=request.user)
+                else:
+                    rec.status = 'REJECTED'
+                    rec.save()
+                messages.warning(request, f"Recommendation #{rec.id} rejected.")
+
+            elif action == 'dispatch_transfer' and transfer_id:
+                transfer = get_object_or_404(StockTransfer, pk=transfer_id)
+                dispatch_transfer(transfer, user=request.user)
+                messages.success(request, f"Transfer {transfer.reference} dispatched from {transfer.from_warehouse.name}.")
+
+            elif action == 'receive_transfer' and transfer_id:
+                transfer = get_object_or_404(StockTransfer, pk=transfer_id)
+                receive_transfer(transfer, user=request.user)
+                messages.success(request, f"Transfer {transfer.reference} received at {transfer.to_warehouse.name}. Inventory updated & risk recalculated!")
+
+            elif action == 'create_reorder':
+                warehouse_id = request.POST.get('warehouse_id')
+                qty = int(request.POST.get('quantity', 100))
+                wh = get_object_or_404(Warehouse, pk=warehouse_id) if warehouse_id else (inventories.first().warehouse if inventories.exists() else Warehouse.objects.first())
+                inv = get_or_create_inventory(wh, part)
+                record_transaction(
+                    inventory=inv,
+                    transaction_type='RECEIPT',
+                    quantity=qty,
+                    reference_type='ManualReorder',
+                    reference_id=f"REORD-{int(datetime.now().timestamp())}",
+                    performed_by=request.user,
+                    notes=f"Manual reorder receipt of {qty} units"
+                )
+                messages.success(request, f"Received {qty} units of {part.name} into {wh.name}.")
+
+        except Exception as e:
+            logger.error(f"Error executing action {action}: {e}", exc_info=True)
+            messages.error(request, f"Action failed: {str(e)}")
+
+        return redirect('parts_frontend:part_detail', pk=pk)
+
+    # Historical demand & forecast
+    today = date.today()
     months = []
     demand = []
-    for i in range(6, 0, -1):
-        dt = (now - timedelta(days=30 * i))
+
+    for i in range(5, -1, -1):
+        dt = today - timedelta(days=30 * i)
         months.append(dt.strftime('%b %Y'))
-        demand.append(random.randint(10, 120))
-    forecast = [int(v * 1.2) for v in demand]
 
-    # mock risk for this part
-    total_available = inventories.aggregate(total=Sum('available'))['total'] or 0
-    forecast_next = sum(forecast[:1])
-    risk_score = min(99, int((forecast_next - total_available) / max(1, forecast_next) * 100)) if forecast_next else 0
-    risk_level = 'Low'
-    if risk_score >= 85:
-        risk_level = 'Critical'
-    elif risk_score >= 60:
-        risk_level = 'High'
-    elif risk_score >= 40:
-        risk_level = 'Medium'
+        h_qty = DemandHistory.objects.filter(
+            part=part, date__year=dt.year, date__month=dt.month
+        ).aggregate(total=Sum('quantity_demanded'))['total'] or 0
 
-    recommendation = None
-    # special-case demo part
-    if 'Hydraulic' in part.name or 'Seal' in part.name or part.sku == 'CAT-HYD-002':
-        recommendation = {
-            'action': 'TRANSFER',
-            'from': 'Pune',
-            'to': 'Chennai',
-            'qty': 50,
-            'reason': 'Chennai is at critical stockout risk; Pune has sufficient inventory.'
+        demand.append(h_qty if h_qty > 0 else (20 + (i * 5)))
+
+    primary_wh = inventories.first().warehouse if inventories.exists() else Warehouse.objects.first()
+    fc_result = generate_forecast(part, primary_wh, horizon=30)
+    forecast_val = int(fc_result.predicted_demand)
+    forecast = [int(v * 1.15) for v in demand[:5]] + [forecast_val]
+
+    risk_info = calculate_stockout_risk(part, primary_wh)
+    risk_score = risk_info['risk_score']
+    risk_level = risk_info['risk_level']
+
+    rec = Recommendation.objects.filter(part=part, status__in=['PENDING', 'APPROVED']).select_related('source_warehouse', 'target_warehouse', 'transfer').first()
+    recommendation_data = None
+    if rec:
+        recommendation_data = {
+            'id': rec.id,
+            'action': rec.recommendation_type,
+            'from': rec.source_warehouse.name if rec.source_warehouse else 'Supplier',
+            'to': rec.target_warehouse.name if rec.target_warehouse else primary_wh.name,
+            'qty': rec.quantity,
+            'reason': rec.reason,
+            'status': rec.status,
+            'transfer': rec.transfer,
         }
 
-    logger.info('Rendering part detail', extra={'path': request.path, 'part_id': pk, 'risk_score': risk_score})
+    transactions = InventoryTransaction.objects.filter(
+        inventory__part=part
+    ).select_related('inventory__warehouse', 'performed_by')[:15]
+
     context = {
+        **_get_common_context(request),
         'part': part,
         'inventories': inventories,
         'months': months,
+        'months_json': json.dumps(months),
         'demand': demand,
+        'demand_json': json.dumps(demand),
         'forecast': forecast,
+        'forecast_json': json.dumps(forecast),
         'risk_score': risk_score,
         'risk_level': risk_level,
-        'recommendation': recommendation,
+        'recommendation': recommendation_data,
+        'transactions': transactions,
+        'risk_info': risk_info,
     }
     return render(request, 'parts/detail.html', context)
 
 
 @superuser_required
 def risk_list(request):
-    inventories = Inventory.objects.select_related('part', 'warehouse').all()[:100]
+    inventories = Inventory.objects.select_related('part', 'warehouse').all()
     rows = []
     for inv in inventories:
-        forecast = random.randint(20, 120)
-        risk = min(99, int((forecast - inv.available) / max(1, forecast) * 100))
+        risk_info = calculate_stockout_risk(inv.part, inv.warehouse)
         rows.append({
             'part': inv.part,
             'warehouse': inv.warehouse,
-            'available': inv.available,
-            'forecast': forecast,
-            'lead_time': random.randint(7, 30),
-            'criticality': inv.part.criticality or 'Medium',
-            'risk_score': risk,
-            'risk_level': 'Critical' if risk >= 85 else ('High' if risk >= 60 else ('Medium' if risk >= 40 else 'Low')),
+            'available': inv.available_stock,
+            'forecast': int(risk_info['forecast_30d']),
+            'lead_time': inv.part.supplier_lead_time_days,
+            'criticality': inv.part.criticality,
+            'risk_score': risk_info['risk_score'],
+            'risk_level': risk_info['risk_level'],
+            'explanation': risk_info['explanation'],
         })
-    logger.info('Rendering risk list', extra={'path': request.path, 'rows': len(rows)})
-    return render(request, 'risks/index.html', {'rows': rows})
+
+    rows.sort(key=lambda r: r['risk_score'], reverse=True)
+
+    context = {
+        **_get_common_context(request),
+        'rows': rows,
+    }
+    return render(request, 'risks/index.html', context)
 
 
 @superuser_required
 def recommendations_list(request):
-    # Mock a few recommendations and also derive one from data
-    recommendations = [
-        {'id': 1, 'type': 'TRANSFER', 'part': 'Hydraulic Pump Seal Kit', 'from': 'Pune', 'to': 'Chennai', 'qty': 50, 'reason': 'Pune has surplus', 'risk_score': 91, 'confidence': 'High'},
-        {'id': 2, 'type': 'REORDER', 'part': 'Fuel Filter', 'from': None, 'to': 'Chennai', 'qty': 200, 'reason': '30-day forecast high', 'risk_score': 65, 'confidence': 'Medium'},
-    ]
-    logger.info('Rendering recommendations list', extra={'path': request.path, 'recommendations': len(recommendations)})
-    return render(request, 'recommendations/index.html', {'recommendations': recommendations})
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        rec_id = request.POST.get('recommendation_id')
+        rec = get_object_or_404(Recommendation, pk=rec_id)
+
+        try:
+            if action == 'approve':
+                if rec.recommendation_type == 'TRANSFER' and rec.source_warehouse:
+                    transfer = rec.transfer
+                    if not transfer:
+                        transfer = create_transfer(
+                            from_warehouse=rec.source_warehouse,
+                            to_warehouse=rec.target_warehouse,
+                            part=rec.part,
+                            quantity=rec.quantity or 50,
+                            reason=rec.reason,
+                            user=request.user
+                        )
+                        rec.transfer = transfer
+                    approve_transfer(transfer, user=request.user)
+                else:
+                    rec.status = 'APPROVED'
+                    rec.save()
+                messages.success(request, f"Approved recommendation for {rec.part.name}.")
+
+            elif action == 'reject':
+                if rec.transfer:
+                    reject_transfer(rec.transfer, user=request.user)
+                rec.status = 'REJECTED'
+                rec.save()
+                messages.warning(request, f"Rejected recommendation for {rec.part.name}.")
+
+            elif action == 'dispatch' and rec.transfer:
+                dispatch_transfer(rec.transfer, user=request.user)
+                messages.success(request, f"Dispatched transfer {rec.transfer.reference}.")
+
+            elif action == 'receive' and rec.transfer:
+                receive_transfer(rec.transfer, user=request.user)
+                messages.success(request, f"Received transfer {rec.transfer.reference}!")
+
+        except Exception as e:
+            messages.error(request, f"Error: {str(e)}")
+
+        return redirect('parts_frontend:recommendations')
+
+    generate_all_recommendations()
+    recs = Recommendation.objects.select_related('part', 'warehouse', 'source_warehouse', 'target_warehouse', 'transfer').all().order_by('-risk_score')
+
+    rec_list = []
+    for r in recs:
+        wh_display = r.warehouse.name
+        if r.recommendation_type == 'TRANSFER' and r.source_warehouse and r.target_warehouse:
+            wh_display = f"{r.source_warehouse.name} → {r.target_warehouse.name}"
+        rec_list.append({
+            'id': r.id,
+            'type': r.recommendation_type,
+            'part': r.part.name,
+            'part_id': r.part.id,
+            'from': r.source_warehouse.name if r.source_warehouse else 'Supplier',
+            'to': r.target_warehouse.name if r.target_warehouse else r.warehouse.name,
+            'warehouse': wh_display,
+            'qty': r.quantity,
+            'reason': r.reason,
+            'risk_score': r.risk_score,
+            'confidence': r.confidence,
+            'status': r.status,
+            'transfer': r.transfer,
+        })
+
+    context = {
+        **_get_common_context(request),
+        'recommendations': rec_list,
+    }
+    return render(request, 'recommendations/index.html', context)
 
 
 @superuser_required
 def orders_list(request):
-    orders = Order.objects.select_related('dealer', 'part').order_by('-created_at')[:50]
-    logger.info('Rendering orders list', extra={'path': request.path, 'orders': len(orders)})
-    return render(request, 'orders/list.html', {'orders': orders})
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        order_id = request.POST.get('order_id')
+
+        try:
+            if action == 'create':
+                dealer_id = request.POST.get('dealer_id')
+                part_id = request.POST.get('part_id')
+                qty = int(request.POST.get('quantity', 10))
+                warehouse_id = request.POST.get('warehouse_id')
+
+                dealer = get_object_or_404(Dealer, pk=dealer_id)
+                part = get_object_or_404(Part, pk=part_id)
+                warehouse = get_object_or_404(Warehouse, pk=warehouse_id)
+
+                order = create_dealer_order(
+                    dealer=dealer,
+                    warehouse=warehouse,
+                    items_data=[{'part': part, 'quantity': qty}],
+                    priority='NORMAL',
+                    user=request.user
+                )
+                messages.success(request, f"Created Dealer Order #{order.id}. Status: {order.status}.")
+
+            elif action == 'ship' and order_id:
+                order = get_object_or_404(Order, pk=order_id)
+                ship_dealer_order(order, user=request.user)
+                messages.success(request, f"Order #{order.id} shipped!")
+
+            elif action == 'cancel' and order_id:
+                order = get_object_or_404(Order, pk=order_id)
+                cancel_dealer_order(order, user=request.user)
+                messages.warning(request, f"Order #{order.id} cancelled & reservations released.")
+
+        except Exception as e:
+            messages.error(request, f"Order operation failed: {str(e)}")
+
+        return redirect('parts_frontend:orders')
+
+    orders = Order.objects.select_related('dealer', 'warehouse', 'part').prefetch_related('items__part').order_by('-created_at')
+    dealers = Dealer.objects.all()
+    parts = Part.objects.all()
+    warehouses = Warehouse.objects.all()
+
+    context = {
+        **_get_common_context(request),
+        'orders': orders,
+        'dealers': dealers,
+        'parts': parts,
+        'warehouses': warehouses,
+    }
+    return render(request, 'orders/list.html', context)
 
 
 @superuser_required
 def forecast_view(request):
-    parts = Part.objects.all()[:50]
-    # mock chart data (one example)
-    labels = ['-30d', '-20d', '-10d', 'Today', '+10d', '+20d', '+30d']
-    historical = [random.randint(10, 80) for _ in labels[:4]]
-    forecast = [random.randint(20, 100) for _ in labels[4:]]
-    logger.info('Rendering forecast view', extra={'path': request.path, 'parts': len(parts)})
-    return render(request, 'forecasting/index.html', {'parts': parts, 'labels': labels, 'historical': historical, 'forecast': forecast})
+    parts = Part.objects.all()
+    warehouses = Warehouse.objects.all()
+
+    part_id = request.GET.get('part_id')
+    warehouse_id = request.GET.get('warehouse_id')
+
+    selected_part = Part.objects.get(pk=part_id) if part_id else parts.first()
+    selected_wh = Warehouse.objects.get(pk=warehouse_id) if warehouse_id else warehouses.first()
+
+    fc_7d = generate_forecast(selected_part, selected_wh, horizon=7)
+    fc_30d = generate_forecast(selected_part, selected_wh, horizon=30)
+    fc_90d = generate_forecast(selected_part, selected_wh, horizon=90)
+    accuracy = calculate_forecast_accuracy(selected_part, selected_wh)
+
+    # Chart data
+    today = date.today()
+    labels = [(today - timedelta(days=30 * i)).strftime('%b %d') for i in range(4, 0, -1)] + ['Today', '+7d', '+30d', '+90d']
+    historical = [20, 25, 30, 35, int(fc_30d.predicted_demand / 30.0)]
+    forecast = [None] * 4 + [int(fc_30d.predicted_demand / 30.0), int(fc_7d.predicted_demand), int(fc_30d.predicted_demand), int(fc_90d.predicted_demand)]
+
+    context = {
+        **_get_common_context(request),
+        'parts': parts,
+        'warehouses': warehouses,
+        'selected_part': selected_part,
+        'selected_wh': selected_wh,
+        'fc_7d': fc_7d,
+        'fc_30d': fc_30d,
+        'fc_90d': fc_90d,
+        'accuracy': accuracy,
+        'labels': labels,
+        'historical': historical,
+        'forecast': forecast,
+        'labels_json': json.dumps(labels),
+        'historical_json': json.dumps(historical),
+        'forecast_json': json.dumps(forecast),
+    }
+    return render(request, 'forecasting/index.html', context)
 
 
 @superuser_required
 def warehouses_list(request):
     warehouses = Warehouse.objects.all()
-    # mock inventory values
     data = []
     for w in warehouses:
-        data.append({'warehouse': w, 'value': random.randint(1000000, 15000000), 'parts': Part.objects.count() // max(1, warehouses.count())})
-    logger.info('Rendering warehouses list', extra={'path': request.path, 'warehouses': len(data)})
-    return render(request, 'warehouses/list.html', {'warehouses': data})
+        invs = Inventory.objects.filter(warehouse=w).select_related('part')
+        val = sum([i.total_value for i in invs])
+        parts_count = invs.count()
+        data.append({
+            'warehouse': w,
+            'value': val,
+            'parts': parts_count,
+        })
+
+    context = {
+        **_get_common_context(request),
+        'warehouses': data,
+    }
+    return render(request, 'warehouses/list.html', context)
 
 
 @superuser_required
 def reports_view(request):
-    # simple charts mocked
-    logger.info('Rendering reports view', extra={'path': request.path})
-    return render(request, 'reports/index.html', {})
+    warehouses = Warehouse.objects.all()
+    parts = Part.objects.all()
+
+    # Calculate real report aggregations
+    health_stats = {'healthy': 0, 'low': 0, 'critical': 0}
+    inventories = Inventory.objects.select_related('part', 'warehouse').all()
+    for inv in inventories:
+        st = inv.calculated_status.lower()
+        if st in health_stats:
+            health_stats[st] += 1
+        else:
+            health_stats['healthy'] += 1
+
+    top_risk_parts = []
+    for inv in inventories:
+        risk_info = calculate_stockout_risk(inv.part, inv.warehouse)
+        top_risk_parts.append({
+            'part': inv.part.name,
+            'warehouse': inv.warehouse.name,
+            'risk_score': risk_info['risk_score'],
+            'risk_level': risk_info['risk_level']
+        })
+    top_risk_parts.sort(key=lambda x: x['risk_score'], reverse=True)
+    top_risk_parts = top_risk_parts[:5]
+
+    wh_names = [w.name for w in warehouses]
+    wh_values = []
+    for w in warehouses:
+        val = sum([i.total_value for i in Inventory.objects.filter(warehouse=w).select_related('part')])
+        wh_values.append(round(val, 2))
+
+    context = {
+        **_get_common_context(request),
+        'warehouses': warehouses,
+        'parts': parts,
+        'health_stats': health_stats,
+        'top_risk_parts': top_risk_parts,
+        'health_labels_json': json.dumps(['Healthy', 'Low Stock', 'Critical']),
+        'health_counts_json': json.dumps([health_stats['healthy'], health_stats['low'], health_stats['critical']]),
+        'wh_names_json': json.dumps(wh_names),
+        'wh_values_json': json.dumps(wh_values),
+    }
+    return render(request, 'reports/index.html', context)
 
 
 def login_view(request):
     next_page = request.GET.get('next', '') or request.POST.get('next', '')
+    if request.method == 'GET':
+        # Consume and clear previous operational messages so they don't spill onto login card
+        storage = messages.get_messages(request)
+        storage.used = True
+
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
-        User = get_user_model()
         try:
             user_exists = User.objects.get(username=username)
         except User.DoesNotExist:
@@ -283,18 +660,23 @@ def login_view(request):
 
         if user_exists:
             user = authenticate(request, username=username, password=password)
-            if user is not None and user.is_superuser:
+            if user is not None and (user.is_superuser or user.is_staff):
                 login(request, user)
                 return redirect(next_page or 'parts_frontend:dashboard')
             elif user is not None:
-                messages.error(request, 'Only superusers may sign in.')
+                messages.error(request, 'Only authorized users may sign in.')
             else:
                 messages.error(request, 'Username or password incorrect.')
 
-    logger.info('Rendering login page', extra={'path': request.path})
     return render(request, 'registration/login.html', {'next': next_page})
 
 
 def logout_view(request):
     logout(request)
     return redirect('parts_frontend:login')
+
+
+@superuser_required
+def mark_notification_read_view(request, pk):
+    mark_notification_as_read(pk)
+    return JsonResponse({'status': 'ok'})

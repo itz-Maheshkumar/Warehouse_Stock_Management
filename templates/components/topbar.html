@@ -12,16 +12,36 @@
 
     <div class="d-flex align-items-center gap-2 ms-auto">
       <button class="btn btn-sm btn-outline-secondary d-lg-none" id="mobileSearchToggle"><i class="bi bi-search"></i></button>
-      <form class="d-flex ms-0 me-3 d-none d-lg-flex" role="search">
-        <input class="form-control form-control-sm me-2" type="search" placeholder="Search parts, SKUs..." aria-label="Search">
+      <form class="d-flex ms-0 me-3 d-none d-lg-flex" role="search" action="{% url 'parts_frontend:inventory' %}" method="get">
+        <input class="form-control form-control-sm me-2" type="search" name="q" placeholder="Search parts, SKUs..." aria-label="Search" value="{{ request.GET.q }}">
       </form>
-      <button class="btn btn-sm btn-outline-secondary position-relative">
-        <i class="bi bi-bell"></i>
-        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">3</span>
-      </button>
+
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary position-relative dropdown-toggle" type="button" id="notifDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-bell"></i>
+          {% if unread_count > 0 %}
+          <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">{{ unread_count }}</span>
+          {% endif %}
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow p-2" style="min-width: 320px;" aria-labelledby="notifDropdown">
+          <li class="dropdown-header fw-bold border-bottom pb-2">Notifications ({% if unread_count %}{{ unread_count }}{% else %}0{% endif %})</li>
+          {% for n in unread_notifications %}
+          <li class="py-2 border-bottom">
+            <a class="dropdown-item p-0 text-wrap" href="{% if n.link %}{{ n.link }}{% else %}{% url 'parts_frontend:risks' %}{% endif %}">
+              <div class="fw-semibold text-dark small">{{ n.title }}</div>
+              <div class="text-muted extra-small" style="font-size: 0.78rem;">{{ n.message }}</div>
+            </a>
+          </li>
+          {% empty %}
+          <li class="text-center py-2 text-muted small">No unread notifications</li>
+          {% endfor %}
+          <li class="text-center pt-2"><a href="{% url 'parts_frontend:risks' %}" class="small text-primary">View Stockout Risks</a></li>
+        </ul>
+      </div>
+
       <div class="d-flex align-items-center gap-2">
         <div class="text-end">
-          <div class="fw-semibold">Demo User</div>
+          <div class="fw-semibold">{% if current_user %}{{ current_user.username }}{% else %}Demo Manager{% endif %}</div>
           <small class="text-muted">Warehouse Manager</small>
         </div>
       </div>

@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Warehouse Stock Management — Maheshkumar Venkatachalam</title>
+<meta name="description" content="Deep dive into Warehouse Stock Management (CatParts India) — a Django spare-parts platform that forecasts demand, scores stockout risk across four regional hubs, and recommends reorder or transfer actions." />
+<meta property="og:title" content="Warehouse Stock Management" />
+<meta property="og:description" content="Multi-warehouse spare-parts inventory, demand forecasting and a stockout-risk recommendation engine — built with Django + DRF." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117; --bg-alt:#11161d; --terminal-bg:#0a0e14; --border:#22282f;
+  --green:#39FF14; --green-dim:#1f8f0c; --text:#c9d1d9; --text-dim:#6b7280;
+  --white:#f4f4f4; --red:#ff5f56; --yellow:#ffbd2e; --violet:#8b7cf6; --cyan:#38bdf8;
+  --mono:'JetBrains Mono','Fira Code',ui-monospace,Consolas,monospace;
+  --max-width:1080px;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;scroll-padding-top:80px;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--mono);line-height:1.65;overflow-x:hidden;-webkit-font-smoothing:antialiased;}
+::selection{background:var(--green);color:#000;}
+img{max-width:100%;display:block;}
+a{color:var(--green);}
+
+#matrix-bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.05;pointer-events:none;}
+.scanline{position:fixed;inset:0;pointer-events:none;z-index:1;
+  background:repeating-linear-gradient(to bottom,rgba(255,255,255,.015) 0px,rgba(255,255,255,.015) 1px,transparent 1px,transparent 3px);}
+main,header,footer,nav{position:relative;z-index:2;}
+
+/* ---- progress + nav ---- */
+#progress{position:fixed;top:0;left:0;height:2px;width:0;background:var(--green);z-index:60;box-shadow:0 0 10px var(--green);transition:width .1s linear;}
+.navbar{position:fixed;top:0;left:0;right:0;z-index:50;background:rgba(13,17,23,.88);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);}
+.nav-inner{max-width:var(--max-width);margin:0 auto;padding:.85rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;}
+.back-link{color:var(--green);text-decoration:none;font-size:.85rem;font-weight:700;white-space:nowrap;}
+.back-link:hover{text-decoration:underline;}
+.nav-links{list-style:none;display:flex;gap:1.35rem;margin:0;padding:0;}
+.nav-links a{color:var(--text);text-decoration:none;font-size:.82rem;transition:color .2s;}
+.nav-links a:hover,.nav-links a.active{color:var(--green);}
+.nav-toggle{display:none;flex-direction:column;gap:4px;background:none;border:none;cursor:pointer;padding:4px;}
+.nav-toggle span{width:22px;height:2px;background:var(--green);}
+
+/* ---- shared ---- */
+.section{max-width:var(--max-width);margin:0 auto;padding:4.5rem 1.25rem;}
+.section-title{font-size:1.4rem;color:var(--white);margin:0 0 .4rem;display:flex;align-items:baseline;gap:.5rem;}
+.section-title .tag{color:var(--green);}
+.section-sub{color:var(--text-dim);font-size:.85rem;margin:0 0 2rem;}
+.terminal-window{width:100%;background:var(--terminal-bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  box-shadow:0 0 40px rgba(57,255,20,.05),0 20px 40px rgba(0,0,0,.4);}
+.terminal-bar{display:flex;align-items:center;gap:8px;padding:.7rem 1rem;background:#161b22;border-bottom:1px solid var(--border);}
+.dot{width:11px;height:11px;border-radius:50%;display:inline-block;}
+.dot.red{background:var(--red);} .dot.yellow{background:var(--yellow);} .dot.green{background:#27c93f;}
+.terminal-title{margin-left:.75rem;color:var(--text-dim);font-size:.78rem;}
+.terminal-body{padding:1.5rem 1.75rem 1.85rem;font-size:.92rem;}
+.terminal-body p{margin:.55rem 0;}
+.prompt{color:var(--green);margin-right:.4rem;}
+.dim{color:var(--text-dim);}
+.hl{color:var(--green);}
+.btn{font-family:var(--mono);font-size:.85rem;padding:.6rem 1.1rem;border-radius:6px;text-decoration:none;border:1px solid var(--green);transition:all .2s;display:inline-block;}
+.btn-primary{background:var(--green);color:#000;font-weight:700;}
+.btn-primary:hover{background:transparent;color:var(--green);}
+.btn-outline{color:var(--green);background:transparent;}
+.btn-outline:hover{background:var(--green);color:#000;}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .55s ease,transform .55s ease;}
+.reveal.in{opacity:1;transform:none;}
+
+/* ---- hero ---- */
+.hero{padding:7.5rem 1.25rem 2rem;max-width:var(--max-width);margin:0 auto;}
+.crumb{font-size:.78rem;color:var(--text-dim);margin-bottom:1rem;}
+.crumb a{color:var(--text-dim);text-decoration:none;}
+.crumb a:hover{color:var(--green);}
+.hero h1{font-size:clamp(1.7rem,4.6vw,2.5rem);margin:.3rem 0 .6rem;color:var(--white);line-height:1.2;}
+.hero-tagline{font-size:1rem;color:var(--text);margin:0 0 1.2rem;max-width:70ch;}
+.badge-row{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0 1.4rem;}
+.badge{border:1px solid var(--green-dim);color:var(--green);background:rgba(57,255,20,.06);padding:.32rem .75rem;border-radius:20px;font-size:.75rem;}
+.hero-links{display:flex;gap:.9rem;flex-wrap:wrap;margin-top:.4rem;}
+.stat-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin:2.5rem 0 0;}
+.stat{background:var(--bg-alt);border:1px solid var(--border);border-radius:10px;padding:1.1rem 1rem;text-align:center;}
+.stat b{display:block;font-size:1.6rem;color:var(--green);line-height:1.1;}
+.stat span{font-size:.72rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
+
+/* ---- architecture ---- */
+.arch-wrap{background:var(--bg-alt);border:1px solid var(--border);border-radius:12px;padding:1rem;overflow-x:auto;}
+.arch-svg{width:100%;min-width:760px;height:auto;display:block;}
+.lane{fill:rgba(255,255,255,.015);stroke:var(--border);stroke-width:1;rx:10;}
+.lane-label{fill:var(--text-dim);font-size:11px;letter-spacing:.12em;font-family:var(--mono);}
+.node rect{fill:#0a0e14;stroke:#2c333c;stroke-width:1.2;rx:7;transition:stroke .2s,fill .2s;}
+.node text{fill:var(--text);font-size:11.5px;font-family:var(--mono);text-anchor:middle;pointer-events:none;}
+.node{cursor:pointer;}
+.node:hover rect,.node.sel rect{stroke:var(--green);fill:rgba(57,255,20,.07);}
+.node:hover text,.node.sel text{fill:var(--white);}
+.edge{stroke:#2f3742;stroke-width:1.2;fill:none;stroke-dasharray:5 6;animation:dash 3.5s linear infinite;}
+.edge.up{stroke:rgba(57,255,20,.35);}
+@keyframes dash{to{stroke-dashoffset:-44;}}
+.arch-detail{margin-top:1rem;border:1px dashed var(--border);border-radius:8px;padding:1rem 1.1rem;background:var(--terminal-bg);min-height:96px;}
+.arch-detail h4{margin:0 0 .35rem;color:var(--green);font-size:.92rem;}
+.arch-detail p{margin:0;font-size:.86rem;}
+.arch-detail .meta{margin-top:.5rem;font-size:.75rem;color:var(--text-dim);}
+
+/* ---- flow ---- */
+.flow-controls{display:flex;gap:.7rem;align-items:center;margin-bottom:1.2rem;flex-wrap:wrap;}
+.flow{display:grid;grid-template-columns:1fr;gap:0;border-left:1px dashed var(--border);margin-left:14px;}
+.step{position:relative;padding:.55rem 0 .55rem 2.1rem;cursor:pointer;}
+.step::before{content:attr(data-n);position:absolute;left:-14px;top:.7rem;width:28px;height:28px;border-radius:50%;
+  background:var(--bg-alt);border:1px solid var(--border);color:var(--text-dim);font-size:.75rem;
+  display:flex;align-items:center;justify-content:center;transition:all .25s;}
+.step.on::before{border-color:var(--green);color:#000;background:var(--green);box-shadow:0 0 14px rgba(57,255,20,.5);}
+.step h4{margin:.35rem 0 .1rem;font-size:.94rem;color:var(--text);transition:color .2s;}
+.step.on h4{color:var(--white);}
+.step .sd{max-height:0;overflow:hidden;transition:max-height .35s ease,opacity .3s;opacity:0;font-size:.86rem;color:var(--text-dim);}
+.step.on .sd{max-height:260px;opacity:1;padding:.35rem 0 .6rem;}
+.step code{color:var(--green);background:rgba(57,255,20,.07);padding:.1rem .35rem;border-radius:4px;font-size:.82em;}
+
+/* ---- feature grid ---- */
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:1.1rem;}
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:1.2rem;}
+.grid-2>*,.grid-3>*,.gallery>*{min-width:0;}
+.card{background:var(--bg-alt);border:1px solid var(--border);border-radius:10px;padding:1.2rem 1.25rem;transition:transform .2s,border-color .2s;}
+.card:hover{transform:translateY(-4px);border-color:var(--green-dim);}
+.card .ico{font-size:1.3rem;}
+.card h3{margin:.5rem 0 .4rem;font-size:.95rem;color:var(--white);}
+.card p{margin:0;font-size:.84rem;color:var(--text-dim);}
+
+/* ---- gallery ---- */
+.filters{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.4rem;}
+.filter{font-family:var(--mono);font-size:.76rem;padding:.35rem .8rem;border-radius:20px;cursor:pointer;
+  background:transparent;color:var(--text-dim);border:1px solid var(--border);transition:all .2s;}
+.filter:hover{color:var(--green);border-color:var(--green-dim);}
+.filter.on{background:rgba(57,255,20,.1);border-color:var(--green);color:var(--green);}
+.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:1.1rem;}
+figure.shot{margin:0;background:var(--bg-alt);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:zoom-in;transition:transform .2s,border-color .2s;}
+figure.shot:hover{transform:translateY(-4px);border-color:var(--green-dim);}
+figure.shot img{aspect-ratio:16/9;object-fit:cover;object-position:top center;border-bottom:1px solid var(--border);background:#06090d;}
+figure.shot figcaption{padding:.7rem .85rem .85rem;font-size:.78rem;color:var(--text-dim);}
+figure.shot figcaption b{display:block;color:var(--text);font-size:.84rem;font-weight:700;margin-bottom:.15rem;}
+figure.shot.hide{display:none;}
+
+/* ---- lightbox ---- */
+.lb{position:fixed;inset:0;background:rgba(5,7,10,.94);z-index:100;display:none;align-items:center;justify-content:center;flex-direction:column;padding:2.5rem 1.5rem;}
+.lb.open{display:flex;}
+.lb img{max-width:min(1200px,94vw);max-height:78vh;object-fit:contain;border:1px solid var(--border);border-radius:8px;}
+.lb-cap{color:var(--text);font-size:.85rem;margin-top:.9rem;text-align:center;max-width:70ch;}
+.lb-cap span{color:var(--text-dim);display:block;font-size:.78rem;margin-top:.2rem;}
+.lb-close{position:absolute;top:1.1rem;right:1.4rem;background:none;border:1px solid var(--border);color:var(--text);
+  font-family:var(--mono);font-size:.9rem;border-radius:6px;padding:.3rem .7rem;cursor:pointer;}
+.lb-close:hover{border-color:var(--green);color:var(--green);}
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);background:none;border:1px solid var(--border);color:var(--text);
+  font-family:var(--mono);font-size:1.2rem;border-radius:6px;padding:.5rem .8rem;cursor:pointer;}
+.lb-nav:hover{border-color:var(--green);color:var(--green);}
+.lb-prev{left:1.2rem;} .lb-next{right:1.2rem;}
+
+/* ---- tables ---- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--bg-alt);}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:.83rem;}
+th,td{text-align:left;padding:.75rem 1rem;border-bottom:1px solid var(--border);}
+th{color:var(--text-dim);font-weight:500;text-transform:uppercase;font-size:.71rem;letter-spacing:.07em;}
+tr:last-child td{border-bottom:none;}
+td b{color:var(--white);}
+td code{color:var(--green);font-size:.9em;}
+
+/* ---- module accordion ---- */
+.acc{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg-alt);}
+.acc+.acc{margin-top:.7rem;}
+.acc-head{width:100%;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:none;border:none;
+  color:var(--text);font-family:var(--mono);font-size:.88rem;padding:.95rem 1.1rem;cursor:pointer;text-align:left;}
+.acc-head:hover{color:var(--green);}
+.acc-head .n{color:var(--text-dim);font-size:.75rem;}
+.acc-body{max-height:0;overflow:hidden;transition:max-height .35s ease;}
+.acc.open .acc-body{max-height:600px;}
+.acc.open .chev{transform:rotate(90deg);}
+.chev{color:var(--green);transition:transform .25s;display:inline-block;}
+.ep{display:flex;flex-wrap:wrap;gap:.3rem .8rem;align-items:baseline;padding:.42rem 1.1rem;font-size:.8rem;border-top:1px solid var(--border);}
+.ep .p{word-break:break-all;color:var(--text);}
+.ep .m{min-width:76px;font-weight:700;font-size:.72rem;}
+.m.found{color:#38bdf8;} .m.core{color:#4ade80;} .m.intel{color:var(--yellow);} .m.dash{color:var(--violet);}
+.ep .d{color:var(--text-dim);margin-left:auto;text-align:right;}
+
+/* ---- code block ---- */
+.code{position:relative;background:var(--terminal-bg);border:1px solid var(--border);border-radius:8px;padding:1rem 1.1rem;overflow-x:auto;}
+.code pre{margin:0;font-size:.82rem;color:var(--text);font-family:var(--mono);}
+.code .c{color:var(--text-dim);}
+.copy{position:absolute;top:.6rem;right:.6rem;background:var(--bg-alt);border:1px solid var(--border);color:var(--text-dim);
+  font-family:var(--mono);font-size:.7rem;padding:.25rem .6rem;border-radius:5px;cursor:pointer;}
+.copy:hover{color:var(--green);border-color:var(--green-dim);}
+
+/* ---- notes ---- */
+.note{border-left:2px solid var(--green-dim);padding:.15rem 0 .15rem 1.1rem;margin-bottom:1.4rem;}
+.note h4{margin:0 0 .3rem;font-size:.9rem;color:var(--white);}
+.note p{margin:0;font-size:.85rem;color:var(--text-dim);}
+
+/* ---- footer ---- */
+.footer{text-align:center;padding:3rem 1.25rem;font-size:.85rem;border-top:1px solid var(--border);margin-top:3rem;}
+.footer p{margin:.35rem 0;}
+
+@media (max-width:900px){
+  .grid-3,.gallery{grid-template-columns:repeat(2,1fr);}
+  .stat-strip{grid-template-columns:repeat(2,1fr);}
+}
+@media (max-width:760px){
+  .ep .d{margin-left:0;width:100%;text-align:left;font-size:.72rem;}
+  .acc.open .acc-body{max-height:900px;}
+  .grid-3,.grid-2,.gallery{grid-template-columns:1fr;}
+  .nav-links{position:absolute;top:100%;left:0;right:0;background:var(--bg);border-bottom:1px solid var(--border);
+    flex-direction:column;padding:1rem 1.25rem;display:none;gap:1rem;}
+  .nav-links.open{display:flex;}
+  .nav-toggle{display:flex;}
+  .terminal-body{padding:1.2rem 1.1rem 1.4rem;}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important;}
+  .reveal{opacity:1;transform:none;}
+}
+</style>
+</head>
+<body>
+
+<canvas id="matrix-bg"></canvas>
+<div class="scanline"></div>
+<div id="progress"></div>
+
+<nav class="navbar">
+  <div class="nav-inner">
+    <a class="back-link" href="https://itz-Maheshkumar.github.io/">← back to portfolio</a>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu"><span></span><span></span><span></span></button>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="#overview">--overview</a></li>
+      <li><a href="#architecture">--architecture</a></li>
+      <li><a href="#flow">--flow</a></li>
+      <li><a href="#screens">--screens</a></li>
+      <li><a href="#modules">--modules</a></li>
+      <li><a href="#build">--run</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero">
+  <p class="crumb"><a href="https://itz-Maheshkumar.github.io/">~/portfolio</a> <span class="dim">/</span> projects <span class="dim">/</span> <span class="hl">warehouse-stock-management</span></p>
+  <h1>📦 Warehouse Stock Management</h1>
+  <p class="hero-tagline">
+    <em>CatParts India</em> — a Django spare-parts platform for a four-hub regional distribution network.
+    It tracks live inventory, forecasts demand per SKU, scores stockout risk from stock, lead time and
+    part criticality, and recommends whether a warehouse should reorder, transfer stock, or simply hold.
+  </p>
+  <div class="badge-row">
+    <span class="badge">Python 3</span><span class="badge">Django</span><span class="badge">Django REST Framework</span>
+    <span class="badge">SQLite</span><span class="badge">Docker</span><span class="badge">Docker Compose</span>
+    <span class="badge">Django Admin</span>
+  </div>
+  <div class="hero-links">
+    <a class="btn btn-primary" href="https://github.com/itz-Maheshkumar/Warehouse_Stock_Management" target="_blank" rel="noopener">./view_source</a>
+    <a class="btn btn-outline" href="#screens">./see_it_running</a>
+  </div>
+  <div class="stat-strip">
+    <div class="stat"><b data-count="4">0</b><span>Regional warehouses</span></div>
+    <div class="stat"><b data-count="7">0</b><span>Core modules</span></div>
+    <div class="stat"><b data-count="3">0</b><span>Recommendation types</span></div>
+    <div class="stat"><b data-count="10">0</b><span>Screens shipped</span></div>
+  </div>
+</header>
+
+<main>
+
+<!-- OVERVIEW -->
+<section id="overview" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> overview</h2>
+  <p class="section-sub">why this exists, and what it actually does</p>
+  <div class="grid-2">
+    <div class="terminal-window">
+      <div class="terminal-bar"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span><span class="terminal-title">problem.md</span></div>
+      <div class="terminal-body">
+        <p>A regional spare-parts network can't answer the question that actually matters: <em>will this
+        SKU run out before the next truck arrives?</em> A stock table shows today's count, not tomorrow's
+        shortage — and for a CRITICAL part like a track roller or a hydraulic pump seal, a stockout doesn't
+        just annoy a dealer, it stops equipment.</p>
+        <p>Nobody wants to reorder blind, and nobody wants a warehouse in Pune sitting on surplus while
+        Chennai runs dry.</p>
+      </div>
+    </div>
+    <div class="terminal-window">
+      <div class="terminal-bar"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span><span class="terminal-title">solution.md</span></div>
+      <div class="terminal-body">
+        <p><span class="hl">CatParts India</span> ties the whole chain together: parts and inventory across
+        four regional hubs, dealer order intake, a demand forecaster, a stockout-risk scorer, and a
+        recommendation engine that turns a risk score into a plain instruction — <code>REORDER</code>,
+        <code>TRANSFER</code> or <code>HOLD</code>.</p>
+        <p>Every stock movement — a supplier receipt, a shipment, a transfer — is written to an
+        append-only inventory ledger, so the number on screen is always explainable.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> architecture</h2>
+  <p class="section-sub">views, intelligence engines, data models — click any box to read what it does</p>
+  <div class="arch-wrap">
+    <svg class="arch-svg" viewBox="0 0 1000 700" role="img" aria-label="System architecture diagram">
+      <!-- lanes -->
+      <rect class="lane" x="40" y="40" width="920" height="115"></rect>
+      <text class="lane-label" x="56" y="62">VIEWS · DJANGO TEMPLATES</text>
+      <rect class="lane" x="40" y="205" width="920" height="215"></rect>
+      <text class="lane-label" x="56" y="227">INTELLIGENCE LAYER · DJANGO SERVICES</text>
+      <rect class="lane" x="40" y="465" width="920" height="130"></rect>
+      <text class="lane-label" x="56" y="487">DATA MODELS · SQLITE</text>
+
+      <!-- edges: client -> gateway -->
+      <g id="edges">
+        <path class="edge" d="M127 133 C127 190 500 190 500 245"></path>
+        <path class="edge" d="M275 133 C275 195 500 195 500 245"></path>
+        <path class="edge" d="M423 133 C423 190 500 190 500 245"></path>
+        <path class="edge" d="M571 133 C571 195 500 195 500 245"></path>
+        <path class="edge" d="M719 133 C719 190 500 190 500 245"></path>
+        <path class="edge" d="M867 133 C867 195 500 195 500 245"></path>
+        <!-- gateway -> engines -->
+        <path class="edge" d="M500 297 C500 315 225 312 225 330"></path>
+        <path class="edge" d="M500 297 C500 315 500 312 500 330"></path>
+        <path class="edge" d="M500 297 C500 315 775 312 775 330"></path>
+        <!-- engines -> data models -->
+        <path class="edge up" d="M225 386 C225 435 162 450 162 505"></path>
+        <path class="edge up" d="M225 386 C225 435 392 450 392 505"></path>
+        <path class="edge" d="M500 386 C500 435 392 455 392 505"></path>
+        <path class="edge" d="M500 386 C500 435 622 455 622 505"></path>
+        <path class="edge up" d="M775 386 C775 435 622 450 622 505"></path>
+        <path class="edge up" d="M775 386 C775 435 852 450 852 505"></path>
+      </g>
+
+      <!-- view nodes -->
+      <g class="node" data-k="dash"><rect x="60" y="81" width="135" height="52"></rect><text x="127" y="105">Dashboard</text><text x="127" y="120">view</text></g>
+      <g class="node" data-k="parts"><rect x="207" y="81" width="135" height="52"></rect><text x="275" y="105">Parts</text><text x="275" y="120">catalog view</text></g>
+      <g class="node" data-k="orders"><rect x="354" y="81" width="135" height="52"></rect><text x="423" y="105">Dealer</text><text x="423" y="120">orders view</text></g>
+      <g class="node" data-k="risk"><rect x="501" y="81" width="135" height="52"></rect><text x="571" y="105">Stockout</text><text x="571" y="120">risk view</text></g>
+      <g class="node" data-k="recs"><rect x="648" y="81" width="135" height="52"></rect><text x="719" y="105">Recommen-</text><text x="719" y="120">dations view</text></g>
+      <g class="node" data-k="wh"><rect x="795" y="81" width="135" height="52"></rect><text x="867" y="105">Warehouses</text><text x="867" y="120">view</text></g>
+
+      <!-- gateway -->
+      <g class="node" data-k="gateway"><rect x="340" y="245" width="320" height="52"></rect><text x="500" y="269">Django URL Router</text><text x="500" y="284">views.py · templates · REST endpoints</text></g>
+
+      <!-- engines -->
+      <g class="node" data-k="forecast"><rect x="90" y="330" width="270" height="56"></rect><text x="225" y="354">Demand Forecast</text><text x="225" y="370">Service · weighted moving avg</text></g>
+      <g class="node" data-k="riskengine"><rect x="390" y="330" width="220" height="56"></rect><text x="500" y="354">Stockout Risk</text><text x="500" y="370">Scoring Engine</text></g>
+      <g class="node" data-k="recengine"><rect x="640" y="330" width="270" height="56"></rect><text x="775" y="354">Recommendation Engine</text><text x="775" y="370">reorder · transfer · hold</text></g>
+
+      <!-- data models -->
+      <g class="node" data-k="partdb"><rect x="60" y="505" width="205" height="56"></rect><text x="162" y="529">Part &amp; Catalog</text><text x="162" y="545">SKU · criticality · lead time</text></g>
+      <g class="node" data-k="invdb"><rect x="290" y="505" width="205" height="56"></rect><text x="392" y="529">Inventory Ledger</text><text x="392" y="545">on hand · reserved · incoming</text></g>
+      <g class="node" data-k="orderdb"><rect x="520" y="505" width="205" height="56"></rect><text x="622" y="529">Dealer Order</text><text x="622" y="545">region · qty · status</text></g>
+      <g class="node" data-k="riskdb"><rect x="750" y="505" width="205" height="56"></rect><text x="852" y="529">Recommendation Log</text><text x="852" y="545">type · risk % · approval</text></g>
+    </svg>
+  </div>
+  <div class="arch-detail" id="archDetail">
+    <h4>Pick a component</h4>
+    <p>Every screen reads through the same Django view layer, and every risk figure on screen traces back to one of three intelligence services rather than a hand-typed number.</p>
+    <p class="meta">// hover or tap any box in the diagram</p>
+  </div>
+</section>
+
+<!-- FLOW -->
+<section id="flow" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> order_to_action_lifecycle</h2>
+  <p class="section-sub">what happens between a dealer's order and a warehouse's next move</p>
+  <div class="flow-controls">
+    <button class="btn btn-outline" id="playFlow">▶ run the trace</button>
+    <span class="dim" style="font-size:.8rem;">or click any step</span>
+  </div>
+  <div class="flow" id="flowList">
+    <div class="step on" data-n="1">
+      <h4>Dealer places an order</h4>
+      <div class="sd">A dealer order carries SKU, quantity, region and dealer name. Its priority — <code>NORMAL</code> or <code>CRITICAL</code> — is driven by the part's own criticality rating rather than typed in by hand.</div>
+    </div>
+    <div class="step" data-n="2">
+      <h4>Inventory is resolved</h4>
+      <div class="sd">The fulfilling warehouse's <code>Available</code> figure — on hand minus reserved, plus incoming — is looked up per SKU per hub, across the four regional distribution centers.</div>
+    </div>
+    <div class="step" data-n="3">
+      <h4>Demand forecast runs</h4>
+      <div class="sd">The Demand Forecast Service applies a <code>WEIGHTED_MOVING_AVERAGE</code> over historical demand to project 7, 30 and 90-day figures per part, rendered as a historical-vs-forecast line chart on the part's detail page.</div>
+    </div>
+    <div class="step" data-n="4">
+      <h4>Stockout risk is scored</h4>
+      <div class="sd">Current stock, reserved stock, incoming stock, forecast demand, supplier lead time and part criticality combine into a 0–100% risk score, bucketed <code>Low</code> / <code>Medium</code> / <code>High</code> / <code>Critical</code>.</div>
+    </div>
+    <div class="step" data-n="5">
+      <h4>A recommendation is issued</h4>
+      <div class="sd">The Recommendation Engine turns the score into an action — <code>REORDER</code> from the supplier, <code>TRANSFER</code> from a healthier hub, or <code>HOLD</code> — each with a plain-language reason, e.g. "estimated transit duration is faster than supplier lead time."</div>
+    </div>
+    <div class="step" data-n="6">
+      <h4>A manager approves or rejects</h4>
+      <div class="sd">Every recommendation card carries <code>Approve</code> / <code>Reject</code> buttons. Approving a reorder or shipping a dealer order moves its status forward — <code>Pending</code> → <code>Approved</code> or <code>Partially Fulfilled</code> → <code>Fulfilled</code>.</div>
+    </div>
+    <div class="step" data-n="7">
+      <h4>The ledger logs it</h4>
+      <div class="sd">Every movement — a supplier <code>RECEIPT</code>, a dealer <code>SHIP</code>, a hub-to-hub <code>TRANSFER</code> — is appended to an immutable Inventory Ledger with a timestamp, reference and note, so the current stock figure is always reconstructable.</div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> what_it_does</h2>
+  <p class="section-sub">the feature set, honestly summarised</p>
+  <div class="grid-3">
+    <div class="card"><div class="ico">📊</div><h3>Executive dashboard</h3><p>Live KPI strip — total parts, inventory value, critical/high-risk counts, open orders, pending recommendations — plus an inventory-health donut and a regional value chart.</p></div>
+    <div class="card"><div class="ico">📦</div><h3>Multi-warehouse inventory</h3><p>On Hand / Reserved / Incoming / Available tracked per SKU across four India regional hubs — Chennai, Pune, Delhi NCR and Bengaluru.</p></div>
+    <div class="card"><div class="ico">📈</div><h3>Demand forecasting</h3><p>A weighted-moving-average model projects 7, 30 and 90-day demand per part from historical order history, charted against actuals.</p></div>
+    <div class="card"><div class="ico">⚠️</div><h3>Stockout risk engine</h3><p>Stock, reserved, incoming, forecast demand, supplier lead time and part criticality combine into a 0–100% risk score with Low/Medium/High/Critical bucketing.</p></div>
+    <div class="card"><div class="ico">🧭</div><h3>Smart recommendations</h3><p>Auto-generated REORDER / TRANSFER / HOLD actions with a plain-language rationale, plus an Approve/Reject workflow and live status.</p></div>
+    <div class="card"><div class="ico">🚚</div><h3>Dealer order lifecycle</h3><p>Orders move Pending → Partially Fulfilled → Fulfilled, with a Ship Stock action that decrements inventory and logs the movement.</p></div>
+    <div class="card"><div class="ico">🧾</div><h3>Immutable inventory ledger</h3><p>Every receipt, shipment and transfer is appended to an audit trail — date, warehouse, type, quantity, reference, notes — never edited in place.</p></div>
+    <div class="card"><div class="ico">🏭</div><h3>Regional distribution network</h3><p>Per-hub cards show location, inventory valuation in ₹ and parts tracked, with drill-down into hub-level inventory.</p></div>
+    <div class="card"><div class="ico">🔐</div><h3>Role-based admin</h3><p>Superuser sign-in for the warehouse manager role, backed by Django admin, with a global parts/SKU search across the app.</p></div>
+  </div>
+</section>
+
+<!-- SCREENS -->
+<section id="screens" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> screens</h2>
+  <p class="section-sub">click any shot to open it full size — ← → to move, esc to close</p>
+  <div class="filters" id="filters">
+    <button class="filter on" data-f="all">all</button>
+    <button class="filter" data-f="dashboard">dashboard</button>
+    <button class="filter" data-f="inventory">inventory</button>
+    <button class="filter" data-f="intelligence">forecast &amp; risk</button>
+    <button class="filter" data-f="operations">operations</button>
+  </div>
+  <div class="gallery" id="gallery">
+
+    <figure class="shot" data-cat="operations" data-full="images/Screenshot%202026-09-09%20192519.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192519.png" alt="CatParts India superuser sign-in screen">
+      <figcaption><b>Superuser sign-in</b>Enterprise-dashboard login gate — username and password authenticate the Warehouse Manager role.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="dashboard" data-full="images/Screenshot%202026-09-09%20192545.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192545.png" alt="Executive dashboard hero with KPI strip and live system health">
+      <figcaption><b>Executive dashboard</b>KPI strip — total parts, inventory value, critical/high-risk counts, open orders, pending recommendations — with a live system-health panel.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="inventory" data-full="images/Screenshot%202026-09-09%20192703.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192703.png" alt="Inventory table across four warehouses with available, reserved, incoming and risk status">
+      <figcaption><b>Inventory across 4 hubs</b>Every SKU × warehouse combination with Available, Reserved, Incoming, Reorder Level and a Medium/High/Critical status badge.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="inventory" data-full="images/Screenshot%202026-09-09%20192751.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192751.png" alt="Spare parts master catalog with criticality, unit cost, supplier and lead time">
+      <figcaption><b>Spare parts catalog</b>Master data per SKU — category, criticality, unit cost, supplier, lead time, safety stock and reorder level.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="intelligence" data-full="images/Screenshot%202026-09-09%20192726.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192726.png" alt="Part detail page showing weighted moving average demand forecast">
+      <figcaption><b>Demand forecast detail</b>Historical-vs-forecast chart for a single part, generated by the weighted-moving-average forecaster.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="intelligence" data-full="images/Screenshot%202026-09-09%20192825.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192825.png" alt="Part detail page after a reorder recommendation was approved, with a ledger entry">
+      <figcaption><b>Recommendation approved</b>A HOLD/reorder recommendation is approved and a RECEIPT entry lands in the Immutable Inventory Ledger History below.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="intelligence" data-full="images/Screenshot%202026-09-09%20192937.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192937.png" alt="Stockout risk table with risk score and risk level per part per warehouse">
+      <figcaption><b>Stockout risk engine</b>Every part × warehouse pairing scored 0–100% from stock, forecast demand, lead time and criticality — ten rows flagged Critical or Medium here.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="intelligence" data-full="images/Screenshot%202026-09-09%20192955.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192955.png" alt="Recommendations queue with transfer, reorder and hold cards">
+      <figcaption><b>Recommendations queue</b>TRANSFER, REORDER and HOLD cards, each with source/destination, quantity, rationale and Approve/Reject actions.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="operations" data-full="images/Screenshot%202026-09-09%20192922.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20192922.png" alt="Dealer orders table with an order marked fulfilled">
+      <figcaption><b>Dealer order fulfilled</b>Order #13 moves from Partially Fulfilled to Fulfilled once Ship Stock is actioned.</figcaption>
+    </figure>
+
+    <figure class="shot" data-cat="operations" data-full="images/Screenshot%202026-09-09%20193010.png">
+      <img loading="lazy" src="images/Screenshot%202026-09-09%20193010.png" alt="India distribution network with four warehouse hub cards">
+      <figcaption><b>India distribution network</b>Chennai, Pune, Delhi NCR and Bengaluru hubs, each with location, inventory valuation and parts tracked.</figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- DATA MODELS -->
+<section id="data" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> core_data_models</h2>
+  <p class="section-sub">what the intelligence layer actually reads and writes</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Model</th><th>Role</th><th>Key fields</th></tr></thead>
+      <tbody>
+        <tr><td><b>Part</b></td><td>Master SKU catalog</td><td><code>sku</code>, category, criticality, unit cost, supplier, lead time, safety stock, reorder level</td></tr>
+        <tr><td><b>Warehouse</b></td><td>Regional distribution hub</td><td>name, location — one of 4 active hubs</td></tr>
+        <tr><td><b>Inventory</b></td><td>Per-hub stock for a part</td><td>on hand, reserved, incoming, available, risk score</td></tr>
+        <tr><td><b>DealerOrder</b></td><td>Demand intake from a dealer</td><td>dealer, region, part, qty, priority, status, date</td></tr>
+        <tr><td><b>Recommendation</b></td><td>Engine output for a part</td><td>type (REORDER / TRANSFER / HOLD), risk %, status</td></tr>
+        <tr><td><b>InventoryLedger</b></td><td>Append-only audit trail</td><td>date, warehouse, type, qty, reference, notes</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- MODULES -->
+<section id="modules" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> system_modules</h2>
+  <p class="section-sub">the 7-module build plan — and what shipped</p>
+
+  <div class="acc open">
+    <button class="acc-head"><span><span class="chev">▸</span> &nbsp;Module 1 — Project Foundation</span><span class="n">scaffold</span></button>
+    <div class="acc-body">
+      <div class="ep"><span class="m found">DJANGO</span><span class="p">Project + apps</span><span class="d">parts app, API routing, SQLite dev DB</span></div>
+      <div class="ep"><span class="m found">DOCKER</span><span class="p">docker-compose.yml</span><span class="d">one-command stack for web app + admin</span></div>
+      <div class="ep"><span class="m found">FIXTURES</span><span class="p">initial_data.json</span><span class="d">seeds realistic SKUs for a working demo</span></div>
+    </div>
+  </div>
+
+  <div class="acc">
+    <button class="acc-head"><span><span class="chev">▸</span> &nbsp;Module 2 — Parts &amp; Inventory Management</span><span class="n">catalog + stock</span></button>
+    <div class="acc-body">
+      <div class="ep"><span class="m core">CATALOG</span><span class="p">Part model</span><span class="d">SKU, category, criticality, cost, supplier, lead time</span></div>
+      <div class="ep"><span class="m core">STOCK</span><span class="p">Inventory model</span><span class="d">on hand / reserved / incoming / available per hub</span></div>
+      <div class="ep"><span class="m core">API</span><span class="p">/api/v1/parts/</span><span class="d">REST endpoint over the part catalog</span></div>
+    </div>
+  </div>
+
+  <div class="acc">
+    <button class="acc-head"><span><span class="chev">▸</span> &nbsp;Module 3 — Dealer Order Management</span><span class="n">intake + fulfillment</span></button>
+    <div class="acc-body">
+      <div class="ep"><span class="m core">INTAKE</span><span class="p">Create Dealer Order</span><span class="d">dealer, region, part, qty, priority from part criticality</span></div>
+      <div class="ep"><span class="m core">FULFILL</span><span class="p">Ship Stock action</span><span class="d">Pending → Partially Fulfilled → Fulfilled</span></div>
+    </div>
+  </div>
+
+  <div class="acc">
+    <button class="acc-head"><span><span class="chev">▸</span> &nbsp;Module 4 — Demand Forecasting</span><span class="n">WEIGHTED_MOVING_AVERAGE</span></button>
+    <div class="acc-body">
+      <div class="ep"><span class="m intel">FORECAST</span><span class="p">7 / 30 / 90-day projections</span><span class="d">weighted moving average over historical demand</span></div>
+      <div class="ep"><span class="m intel">CHART</span><span class="p">Demand History &amp; Forecast</span><span class="d">historical vs. forecast line chart per part</span></div>
+    </div>
+  </div>
+
+  <div class="acc">
+    <button class="acc-head"><span><span class="chev">▸</span> &nbsp;Module 5 — Stockout Risk Engine</span><span class="n">core feature</span></button>
+    <div class="acc-body">
+      <div class="ep"><span class="m intel">SCORE</span><span class="p">Risk Score %</span><span class="d">stock + reserved + incoming + forecast + lead time + criticality</span></div>
+      <div class="ep"><span class="m intel">BUCKET</span><span class="p">Risk Level</span><span class="d">Low / Medium / High / Critical</span></div>
+      <div class="ep"><span class="m intel">SURFACE</span><span class="p">Stockout Risk Alerts</span><span class="d">shown on dashboard and dedicated risk page</span></div>
+    </div>
+  </div>
+
+  <div class="acc">
+    <button class="acc-head"><span><span class="chev">▸</span> &nbsp;Module 6 — Smart Recommendation Engine</span><span class="n">decision support</span></button>
+    <div class="acc-body">
+      <div class="ep"><span class="m intel">REORDER</span><span class="p">Reorder N units</span><span class="d">from the supplier, sized to forecast demand</span></div>
+      <div class="ep"><span class="m intel">TRANSFER</span><span class="p">Move stock hub → hub</span><span class="d">rationale compares transit time to supplier lead time</span></div>
+      <div class="ep"><span class="m intel">HOLD</span><span class="p">No action needed</span><span class="d">issued when a hub's stock is healthy</span></div>
+    </div>
+  </div>
+
+  <div class="acc">
+    <button class="acc-head"><span><span class="chev">▸</span> &nbsp;Module 7 — India Warehouse Intelligence Dashboard</span><span class="n">landing page</span></button>
+    <div class="acc-body">
+      <div class="ep"><span class="m dash">KPIs</span><span class="p">Total parts, inventory value, risk counts</span><span class="d">Open orders + pending recommendations</span></div>
+      <div class="ep"><span class="m dash">CHARTS</span><span class="p">Inventory Health donut · Regional Inventory bar</span><span class="d">Healthy / Low Stock / Critical split</span></div>
+      <div class="ep"><span class="m dash">FEEDS</span><span class="p">Stockout Risk Alerts · Recent Dealer Orders</span><span class="d">live table + top recommendations list</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- BUILD -->
+<section id="build" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> run_it_yourself</h2>
+  <p class="section-sub">two ways to bring the stack up</p>
+  <div class="grid-2">
+    <div>
+      <p class="dim" style="font-size:.82rem;">// option 1 — docker compose</p>
+      <div class="code">
+        <button class="copy">copy</button>
+<pre><span class="c"># clone and start the stack</span>
+git clone https://github.com/itz-Maheshkumar/Warehouse_Stock_Management.git
+cd Warehouse_Stock_Management
+docker-compose up --build
+
+<span class="c"># web app  → http://localhost:8000</span>
+<span class="c"># admin    → http://localhost:8000/admin/</span>
+<span class="c"># api      → http://localhost:8000/api/v1/parts/</span></pre>
+      </div>
+    </div>
+    <div>
+      <p class="dim" style="font-size:.82rem;">// option 2 — local Python</p>
+      <div class="code">
+        <button class="copy">copy</button>
+<pre><span class="c"># PowerShell</span>
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py loaddata parts/fixtures/initial_data.json
+python manage.py createsuperuser
+python manage.py runserver
+
+<span class="c"># app → http://127.0.0.1:8000</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- NOTES -->
+<section id="notes" class="section reveal">
+  <h2 class="section-title"><span class="tag">#</span> engineering_notes</h2>
+  <p class="section-sub">decisions worth defending in an interview</p>
+  <div class="grid-2">
+    <div>
+      <div class="note"><h4>An immutable ledger, not a mutable counter</h4><p>Stock isn't just a number that gets overwritten. Every RECEIPT, SHIP and TRANSFER is appended with a timestamp, reference and note, so "why is stock 170?" always has an answer in the Immutable Inventory Ledger History.</p></div>
+      <div class="note"><h4>Risk blends five signals, not one</h4><p>Current stock alone doesn't decide risk — reserved and incoming stock, forecast demand, supplier lead time and part criticality all feed the same score, so a CRITICAL part with a 25-day lead time outranks a MEDIUM part sitting at the same stock count.</p></div>
+      <div class="note"><h4>Forecast and risk are shown, not hidden</h4><p>The demand chart and the risk score sit right on the part detail page next to the recommendation — not behind an opaque "risk: high" label with no explanation.</p></div>
+    </div>
+    <div>
+      <div class="note"><h4>Recommendations carry their reasoning</h4><p>Each TRANSFER or REORDER card states source, destination, quantity and why — e.g. "estimated transit duration (5 days) is faster than supplier lead time (25 days)" — not just the verb.</p></div>
+      <div class="note"><h4>Four independent regional hubs</h4><p>Chennai, Pune, Delhi NCR and Bengaluru each carry their own stock, so a national stockout risk can often be resolved locally with a TRANSFER before a supplier REORDER is ever needed.</p></div>
+      <div class="note"><h4>Fixture-driven demo data</h4><p><code>initial_data.json</code> seeds realistic SKUs — engine filters, hydraulic seals, track roller assemblies — so the forecaster and risk engine have real history to work from immediately after <code>loaddata</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section reveal" style="padding-top:0;">
+  <div class="terminal-window">
+    <div class="terminal-bar"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span><span class="terminal-title">./next_steps.sh</span></div>
+    <div class="terminal-body" style="text-align:center;">
+      <p><span class="prompt">$</span> echo "read the code, or come back to the rest of the work"</p>
+      <div class="hero-links" style="justify-content:center;margin-top:1.2rem;">
+        <a class="btn btn-primary" href="https://github.com/itz-Maheshkumar/Warehouse_Stock_Management" target="_blank" rel="noopener">./view_source</a>
+        <a class="btn btn-outline" href="https://itz-Maheshkumar.github.io/#projects">./other_projects</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <p><span class="prompt">$</span> print("built by Maheshkumar Venkatachalam")</p>
+  <p class="dim">© <span id="year"></span> Maheshkumar Venkatachalam — project deep dive, hosted on GitHub Pages.</p>
+</footer>
+
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Screenshot viewer">
+  <button class="lb-close" id="lbClose" aria-label="Close">esc ✕</button>
+  <button class="lb-nav lb-prev" id="lbPrev" aria-label="Previous">‹</button>
+  <button class="lb-nav lb-next" id="lbNext" aria-label="Next">›</button>
+  <img id="lbImg" src="" alt="">
+  <div class="lb-cap" id="lbCap"></div>
+</div>
+
+<script>
+/* ---------- matrix background ---------- */
+(function(){
+  var c=document.getElementById('matrix-bg');
+  if(!c||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  var ctx=c.getContext('2d'),cols,drops,fs=14;
+  var chars='REORDERTRANSFERHOLD01{}$;RISK'.split('');
+  function size(){c.width=window.innerWidth;c.height=window.innerHeight;cols=Math.floor(c.width/fs);drops=new Array(cols).fill(1);}
+  size();window.addEventListener('resize',size);
+  setInterval(function(){
+    ctx.fillStyle='rgba(13,17,23,0.06)';ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle='#39FF14';ctx.font=fs+'px monospace';
+    for(var i=0;i<drops.length;i++){
+      ctx.fillText(chars[Math.floor(Math.random()*chars.length)],i*fs,drops[i]*fs);
+      if(drops[i]*fs>c.height&&Math.random()>0.975)drops[i]=0;
+      drops[i]++;
+    }
+  },60);
+})();
+
+/* ---------- nav ---------- */
+document.getElementById('navToggle').addEventListener('click',function(){
+  document.getElementById('navLinks').classList.toggle('open');
+});
+document.querySelectorAll('.nav-links a').forEach(function(a){
+  a.addEventListener('click',function(){document.getElementById('navLinks').classList.remove('open');});
+});
+document.getElementById('year').textContent=new Date().getFullYear();
+
+/* ---------- scroll progress + spy ---------- */
+var bar=document.getElementById('progress');
+var secs=[].slice.call(document.querySelectorAll('main section[id]'));
+var links=[].slice.call(document.querySelectorAll('.nav-links a'));
+function onScroll(){
+  var h=document.documentElement.scrollHeight-window.innerHeight;
+  bar.style.width=(h>0?(window.scrollY/h)*100:0)+'%';
+  var cur='';
+  secs.forEach(function(s){ if(window.scrollY>=s.offsetTop-140) cur=s.id; });
+  links.forEach(function(l){ l.classList.toggle('active', l.getAttribute('href')==='#'+cur); });
+}
+window.addEventListener('scroll',onScroll,{passive:true});onScroll();
+
+/* ---------- reveal ---------- */
+var io=new IntersectionObserver(function(es){
+  es.forEach(function(e){ if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);} });
+},{threshold:0.08});
+document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+
+/* ---------- counters ---------- */
+var cio=new IntersectionObserver(function(es){
+  es.forEach(function(e){
+    if(!e.isIntersecting)return;
+    var el=e.target,target=+el.dataset.count,n=0;
+    var t=setInterval(function(){n++;el.textContent=n;if(n>=target)clearInterval(t);},260/Math.max(target,1)+34);
+    cio.unobserve(el);
+  });
+},{threshold:0.5});
+document.querySelectorAll('[data-count]').forEach(function(el){cio.observe(el);});
+
+/* ---------- architecture detail ---------- */
+var ARCH={
+  dash:['Dashboard view','The landing page: KPI strip, inventory-health donut, regional inventory value chart, live stockout-risk feed and recent dealer orders.','client · Django template'],
+  parts:['Parts catalog view','Every SKU with category, criticality, unit cost, supplier, lead time, safety stock and reorder level — plus a searchable inventory table across all four hubs.','client · Django template'],
+  orders:['Dealer orders view','Order intake and fulfillment — dealer, region, part, quantity, priority and status, with a Ship Stock action that closes the loop.','client · Django template'],
+  risk:['Stockout risk view','Every part × warehouse pairing scored and ranked by risk, with current stock, forecast demand, lead time and criticality shown side by side.','client · Django template'],
+  recs:['Recommendations view','The Recommendation Engine\'s output as approve/reject cards — REORDER, TRANSFER and HOLD — each with its rationale.','client · Django template'],
+  wh:['Warehouses view','The four regional hubs with location, inventory valuation and parts tracked, drilling into hub-level inventory.','client · Django template'],
+  gateway:['Django URL router','Routes every request to its view, renders server-side templates, and exposes a parallel REST surface (e.g. /api/v1/parts/) over the same models.','Django · Django REST Framework'],
+  forecast:['Demand Forecast Service','Applies a WEIGHTED_MOVING_AVERAGE over historical demand to project 7, 30 and 90-day figures per part, feeding the Demand History & Forecast chart.','Django service layer'],
+  riskengine:['Stockout Risk Scoring Engine','Combines current + reserved + incoming stock, forecast demand, supplier lead time and part criticality into a 0–100% Risk Score, bucketed Low/Medium/High/Critical.','Django service layer'],
+  recengine:['Recommendation Engine','Reads the risk score and turns it into REORDER, TRANSFER or HOLD, sizing the quantity and writing a plain-language rationale for the approval workflow.','Django service layer'],
+  partdb:['Part & Catalog model','Master SKU data — category, criticality, unit cost, supplier, lead time, safety stock and reorder level. Feeds every other module.','SQLite · Django ORM'],
+  invdb:['Inventory Ledger model','Per-hub stock (on hand, reserved, incoming, available) plus an append-only movement log — RECEIPT, SHIP, TRANSFER — with reference and notes.','SQLite · Django ORM'],
+  orderdb:['Dealer Order model','Demand intake from dealers — region, part, quantity, priority and fulfillment status.','SQLite · Django ORM'],
+  riskdb:['Recommendation Log model','Persisted engine output — type, risk %, status (Pending/Approved/Rejected) — so every recommendation has a durable record.','SQLite · Django ORM']
+};
+var detail=document.getElementById('archDetail');
+function showArch(k,node){
+  var d=ARCH[k];if(!d)return;
+  detail.innerHTML='<h4>'+d[0]+'</h4><p>'+d[1]+'</p><p class="meta">// '+d[2]+'</p>';
+  document.querySelectorAll('.node').forEach(function(n){n.classList.remove('sel');});
+  if(node)node.classList.add('sel');
+}
+document.querySelectorAll('.node').forEach(function(n){
+  n.addEventListener('mouseenter',function(){showArch(n.dataset.k,n);});
+  n.addEventListener('click',function(){showArch(n.dataset.k,n);});
+});
+
+/* ---------- flow stepper ---------- */
+var steps=[].slice.call(document.querySelectorAll('.step'));
+function openStep(i){steps.forEach(function(s,j){s.classList.toggle('on',i===j);});}
+steps.forEach(function(s,i){s.addEventListener('click',function(){openStep(i);});});
+var playing=null;
+document.getElementById('playFlow').addEventListener('click',function(){
+  var btn=this;
+  if(playing){clearInterval(playing);playing=null;btn.textContent='▶ run the trace';return;}
+  var i=0;openStep(0);btn.textContent='■ stop';
+  playing=setInterval(function(){
+    i++;
+    if(i>=steps.length){clearInterval(playing);playing=null;btn.textContent='▶ run the trace';return;}
+    openStep(i);
+  },2600);
+});
+
+/* ---------- gallery filter ---------- */
+var shots=[].slice.call(document.querySelectorAll('figure.shot'));
+document.getElementById('filters').addEventListener('click',function(e){
+  var b=e.target.closest('.filter');if(!b)return;
+  document.querySelectorAll('.filter').forEach(function(f){f.classList.remove('on');});
+  b.classList.add('on');
+  var f=b.dataset.f;
+  shots.forEach(function(s){s.classList.toggle('hide',f!=='all'&&s.dataset.cat!==f);});
+});
+
+/* ---------- lightbox ---------- */
+var lb=document.getElementById('lb'),lbImg=document.getElementById('lbImg'),lbCap=document.getElementById('lbCap'),idx=0;
+function visible(){return shots.filter(function(s){return !s.classList.contains('hide');});}
+function openLb(fig){
+  var list=visible();idx=list.indexOf(fig);paint();
+  lb.classList.add('open');document.body.style.overflow='hidden';
+}
+function paint(){
+  var list=visible(),fig=list[idx];if(!fig)return;
+  lbImg.src=fig.dataset.full;lbImg.alt=fig.querySelector('img').alt;
+  var cap=fig.querySelector('figcaption');
+  lbCap.innerHTML='<b>'+cap.querySelector('b').textContent+'</b><span>'+cap.textContent.replace(cap.querySelector('b').textContent,'')+'</span>';
+}
+function move(d){var list=visible();idx=(idx+d+list.length)%list.length;paint();}
+function closeLb(){lb.classList.remove('open');document.body.style.overflow='';}
+shots.forEach(function(s){s.addEventListener('click',function(){openLb(s);});});
+document.getElementById('lbClose').addEventListener('click',closeLb);
+document.getElementById('lbPrev').addEventListener('click',function(e){e.stopPropagation();move(-1);});
+document.getElementById('lbNext').addEventListener('click',function(e){e.stopPropagation();move(1);});
+lb.addEventListener('click',function(e){if(e.target===lb)closeLb();});
+document.addEventListener('keydown',function(e){
+  if(!lb.classList.contains('open'))return;
+  if(e.key==='Escape')closeLb();
+  if(e.key==='ArrowLeft')move(-1);
+  if(e.key==='ArrowRight')move(1);
+});
+
+/* ---------- accordion ---------- */
+document.querySelectorAll('.acc-head').forEach(function(h){
+  h.addEventListener('click',function(){h.parentElement.classList.toggle('open');});
+});
+
+/* ---------- copy buttons ---------- */
+document.querySelectorAll('.copy').forEach(function(b){
+  b.addEventListener('click',function(){
+    var txt=b.parentElement.querySelector('pre').innerText;
+    navigator.clipboard.writeText(txt).then(function(){
+      b.textContent='copied ✓';setTimeout(function(){b.textContent='copy';},1600);
+    }).catch(function(){b.textContent='ctrl+c';setTimeout(function(){b.textContent='copy';},1600);});
+  });
+});
+</script>
+</body>
+</html>
