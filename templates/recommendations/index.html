@@ -12,22 +12,59 @@
   <div class="row">
     {% for rec in recommendations %}
       <div class="col-md-6">
-        <div class="card shadow-sm mb-3">
+        <div class="card shadow-sm mb-3 border-start border-4 {% if rec.type == 'TRANSFER' %}border-primary{% elif rec.type == 'REORDER' %}border-warning{% else %}border-secondary{% endif %}">
           <div class="card-body">
-            <div class="d-flex justify-content-between">
+            <div class="d-flex justify-content-between align-items-start mb-2">
               <div>
-                <h6 class="mb-1">{{ rec.type }}</h6>
-                <div class="fw-semibold">{{ rec.part }}</div>
+                <span class="badge {% if rec.type == 'TRANSFER' %}bg-primary{% elif rec.type == 'REORDER' %}bg-warning text-dark{% else %}bg-secondary{% endif %} mb-1">{{ rec.type }}</span>
+                <h6 class="mb-0"><a href="{% url 'parts_frontend:part_detail' pk=rec.part_id %}">{{ rec.part }}</a></h6>
                 <div class="small text-muted">{{ rec.warehouse }}</div>
               </div>
               <div class="text-end">
-                <div class="text-muted small">Risk: {{ rec.risk_score|default:'—' }}</div>
-                <div class="mt-2"><button class="btn btn-sm btn-success">Approve</button> <button class="btn btn-sm btn-outline-secondary">Reject</button></div>
+                <div class="fw-bold text-danger">Risk: {{ rec.risk_score }}%</div>
+                <small class="badge bg-light text-dark border">Status: {{ rec.status }}</small>
               </div>
+            </div>
+            <p class="small text-secondary mb-3">{{ rec.reason }}</p>
+            <div class="d-flex justify-content-end gap-2">
+              {% if rec.status == 'PENDING' %}
+              <form method="post" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="approve">
+                <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
+                <button type="submit" class="btn btn-sm btn-success">Approve</button>
+              </form>
+              <form method="post" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reject">
+                <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
+              </form>
+              {% elif rec.status == 'APPROVED' and rec.transfer %}
+                {% if rec.transfer.status == 'APPROVED' %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="dispatch">
+                  <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
+                  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-truck"></i> Dispatch Transfer</button>
+                </form>
+                {% elif rec.transfer.status == 'DISPATCHED' %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="receive">
+                  <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
+                  <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-box-arrow-in-down"></i> Receive Stock</button>
+                </form>
+                {% elif rec.transfer.status == 'RECEIVED' %}
+                <span class="badge bg-success p-2"><i class="bi bi-check-circle-fill"></i> Transfer Completed</span>
+                {% endif %}
+              {% endif %}
             </div>
           </div>
         </div>
       </div>
+    {% empty %}
+      <div class="col-12 text-muted p-4 text-center">No active recommendations</div>
     {% endfor %}
   </div>
 </div>

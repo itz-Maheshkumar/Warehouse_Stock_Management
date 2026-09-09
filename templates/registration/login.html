@@ -33,7 +33,9 @@
         {% if messages %}
           <div class="login-message">
             {% for message in messages %}
-              <div class="alert alert-{{ message.tags|default:'danger' }} small mb-2" role="alert">{{ message }}</div>
+              {% if 'error' in message.tags or 'danger' in message.tags %}
+              <div class="alert alert-danger small mb-2" role="alert">{{ message }}</div>
+              {% endif %}
             {% endfor %}
           </div>
         {% endif %}

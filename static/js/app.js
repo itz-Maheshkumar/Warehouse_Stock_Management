@@ -19,9 +19,7 @@ document.addEventListener('DOMContentLoaded', function(){
       sidebar.classList.remove('d-none');
     } else {
       document.body.classList.remove('sidebar-open');
-      if (window.innerWidth < 992) {
-        sidebar.classList.add('d-none');
-      }
+      sidebar.classList.add('d-none');
     }
   }
 
@@ -29,16 +27,18 @@ document.addEventListener('DOMContentLoaded', function(){
 
   if (toggle && sidebar) {
     const savedHidden = localStorage.getItem('catpartsSidebarHidden');
-    if (savedHidden === 'true' && window.innerWidth >= 992) {
-      sidebar.classList.add('d-none');
+    if (savedHidden === 'true') {
+      setSidebarOpen(false);
+    } else {
+      setSidebarOpen(true);
     }
 
     toggle.addEventListener('click', function(e){
       e.preventDefault();
-      const wasOpen = document.body.classList.contains('sidebar-open');
-      setSidebarOpen(!wasOpen);
-      localStorage.setItem('catpartsSidebarHidden', wasOpen ? 'true' : 'false');
-      uiLog('Sidebar toggled', { open: !wasOpen });
+      const isHidden = sidebar.classList.contains('d-none');
+      setSidebarOpen(isHidden);
+      localStorage.setItem('catpartsSidebarHidden', isHidden ? 'false' : 'true');
+      uiLog('Sidebar toggled', { open: isHidden });
     });
   }
 

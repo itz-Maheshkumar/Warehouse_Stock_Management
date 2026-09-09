@@ -1,29 +1,91 @@
 {% extends 'base.html' %}
 {% block title %}Demand Forecast{% endblock %}
-{% block page_title %}Demand Forecasting{% endblock %}
+{% block page_title %}Demand Forecasting Engine{% endblock %}
 {% block content %}
-<div class="card shadow-sm hero-panel p-3">
+<div class="card shadow-sm hero-panel p-3 mb-4">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-      <h5>Demand Forecast</h5>
-      <div class="small text-muted">Predict upcoming demand and align warehouse replenishment.</div>
+      <h5 class="mb-0">Demand Forecast: {{ selected_part.sku }} — {{ selected_part.name }}</h5>
+      <div class="small text-muted">Location: {{ selected_wh.name }} • Supplier Lead Time: {{ selected_part.supplier_lead_time_days }} days</div>
     </div>
-    <span class="data-chip">Forecast horizon: 30 days</span>
+    <span class="badge bg-primary fs-6">Method: {{ fc_30d.forecasting_method }}</span>
   </div>
-  <form class="row mb-3">
-    <div class="col-md-4"><select class="form-select"><option>Choose part...</option>{% for p in parts %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
-    <div class="col-md-3"><select class="form-select"><option>Chennai</option><option>Pune</option></select></div>
-    <div class="col-md-3"><select class="form-select"><option>Next 30 days</option></select></div>
-    <div class="col-md-2"><button class="btn btn-primary w-100">Run Forecast</button></div>
+  <form class="row g-2 mb-3" method="get">
+    <div class="col-md-5">
+      <label class="form-label small fw-semibold">Part</label>
+      <select name="part_id" class="form-select form-select-sm">
+        {% for p in parts %}
+        <option value="{{ p.id }}" {% if p.id == selected_part.id %}selected{% endif %}>{{ p.sku }} - {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Warehouse</label>
+      <select name="warehouse_id" class="form-select form-select-sm">
+        {% for w in warehouses %}
+        <option value="{{ w.id }}" {% if w.id == selected_wh.id %}selected{% endif %}>{{ w.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+      <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-graph-up"></i> Generate Forecast</button>
+    </div>
   </form>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card shadow-sm p-3 border-start border-primary border-4">
+      <small class="text-muted text-uppercase fw-semibold">7-Day Forecast</small>
+      <div class="h3 mb-0 text-primary mt-1">{{ fc_7d.predicted_demand|floatformat:0 }} <small class="fs-6">units</small></div>
+      <small class="text-muted">Short-term planning</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm p-3 border-start border-success border-4">
+      <small class="text-muted text-uppercase fw-semibold">30-Day Forecast</small>
+      <div class="h3 mb-0 text-success mt-1">{{ fc_30d.predicted_demand|floatformat:0 }} <small class="fs-6">units</small></div>
+      <small class="text-muted">Monthly baseline</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm p-3 border-start border-info border-4">
+      <small class="text-muted text-uppercase fw-semibold">90-Day Forecast</small>
+      <div class="h3 mb-0 text-info mt-1">{{ fc_90d.predicted_demand|floatformat:0 }} <small class="fs-6">units</small></div>
+      <small class="text-muted">Quarterly projection</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card shadow-sm p-3 border-start border-warning border-4">
+      <small class="text-muted text-uppercase fw-semibold">Forecast Accuracy (WAPE)</small>
+      <div class="h3 mb-0 text-warning mt-1">{{ accuracy.accuracy_percent }}%</div>
+      <small class="text-muted">MAE: {{ accuracy.mae }} | Samples: {{ accuracy.samples }}</small>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm p-3">
+  <h6 class="fw-semibold">Demand Projection Curve (Historical vs Forecasted Demand)</h6>
   <canvas id="forecastChart" height="120"></canvas>
 </div>
 {% endblock %}
 {% block extra_js %}
 <script>
-const labels = {{ labels|safe }};
-const hist = {{ historical|safe }};
-const fc = {{ forecast|safe }};
-new Chart(document.getElementById('forecastChart'), { type: 'line', data: { labels: labels, datasets: [{ label: 'Historical', data: hist, borderColor: '#0d6efd' }, { label: 'Forecast', data: fc, borderColor: '#dc3545' }] } });
+const labels = {{ labels_json|safe }};
+const hist = {{ historical_json|safe }};
+const fc = {{ forecast_json|safe }};
+new Chart(document.getElementById('forecastChart'), {
+  type: 'line',
+  data: {
+    labels: labels,
+    datasets: [
+      { label: 'Historical Demand', data: hist, borderColor: '#0d6efd', backgroundColor: 'rgba(13, 110, 253, 0.1)', fill: true, tension: 0.3 },
+      { label: 'Forecasted Demand', data: fc, borderColor: '#dc3545', borderDash: [6, 4], tension: 0.3 }
+    ]
+  },
+  options: {
+    scales: { y: { beginAtZero: true, title: { display: true, text: 'Units Demanded' } } }
+  }
+});
 </script>
 {% endblock %}

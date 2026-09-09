@@ -1,18 +1,92 @@
 {% extends 'base.html' %}
-{% block title %}Reports{% endblock %}
+{% block title %}Reports & Analytics{% endblock %}
 {% block page_title %}Reports & Analytics{% endblock %}
 {% block content %}
-<div class="card shadow-sm p-3">
-  <h5>Reports</h5>
-  <div class="row">
-    <div class="col-md-6"><canvas id="report1" height="120"></canvas></div>
-    <div class="col-md-6"><canvas id="report2" height="120"></canvas></div>
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card shadow-sm p-3 h-100">
+      <h6 class="fw-semibold mb-3"><i class="bi bi-pie-chart-fill text-primary me-1"></i> Inventory Stock Health Breakdown</h6>
+      <canvas id="healthChart" height="150"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow-sm p-3 h-100">
+      <h6 class="fw-semibold mb-3"><i class="bi bi-building-fill-gear text-success me-1"></i> Regional Warehouse Inventory Valuation (INR)</h6>
+      <canvas id="warehouseValuationChart" height="150"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm p-3 mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h6 class="fw-semibold mb-0"><i class="bi bi-exclamation-triangle-fill text-danger me-1"></i> Top Critical Stockout Risk Spare Parts</h6>
+    <a href="{% url 'parts_frontend:risks' %}" class="btn btn-sm btn-outline-primary">View All Risks</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr><th>Spare Part</th><th>Warehouse</th><th>Risk Score</th><th>Risk Level</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        {% for r in top_risk_parts %}
+        <tr>
+          <td class="fw-semibold">{{ r.part }}</td>
+          <td>{{ r.warehouse }}</td>
+          <td>
+            <div class="progress" style="height: 18px; min-width: 100px;">
+              <div class="progress-bar {% if r.risk_score >= 81 %}bg-danger{% elif r.risk_score >= 61 %}bg-warning text-dark{% else %}bg-info{% endif %}" role="progressbar" style="width: {{ r.risk_score }}%;">{{ r.risk_score }}%</div>
+            </div>
+          </td>
+          <td>{% include 'components/risk_badge.html' with level=r.risk_level %}</td>
+          <td><a href="{% url 'parts_frontend:recommendations' %}" class="btn btn-sm btn-outline-primary">Take Action</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-center text-muted">No high risk parts recorded</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endblock %}
 {% block extra_js %}
 <script>
-new Chart(document.getElementById('report1'), { type: 'line', data: { labels: ['Jan','Feb','Mar','Apr'], datasets: [{ label: 'Inventory value', data: [10,12,9,14], borderColor:'#0d6efd' }] } });
-new Chart(document.getElementById('report2'), { type: 'bar', data: { labels: ['Low','Medium','High'], datasets: [{ label: 'Risk', data: [120,40,12], backgroundColor:['#2ecc71','#f1c40f','#e74c3c'] }] });
+// Health Chart
+const healthLabels = {{ health_labels_json|safe }};
+const healthData = {{ health_counts_json|safe }};
+new Chart(document.getElementById('healthChart'), {
+  type: 'doughnut',
+  data: {
+    labels: healthLabels,
+    datasets: [{
+      data: healthData,
+      backgroundColor: ['#198754', '#ffc107', '#dc3545']
+    }]
+  },
+  options: { plugins: { legend: { position: 'bottom' } } }
+});
+
+// Valuation Chart
+const whLabels = {{ wh_names_json|safe }};
+const whValues = {{ wh_values_json|safe }};
+new Chart(document.getElementById('warehouseValuationChart'), {
+  type: 'bar',
+  data: {
+    labels: whLabels,
+    datasets: [{
+      label: 'Inventory Value (INR)',
+      data: whValues,
+      backgroundColor: '#0d6efd'
+    }]
+  },
+  options: {
+    scales: {
+      y: {
+        ticks: {
+          callback: function(v) { return '₹' + (v/100000).toFixed(1) + 'L'; }
+        }
+      }
+    }
+  }
+});
 </script>
 {% endblock %}
